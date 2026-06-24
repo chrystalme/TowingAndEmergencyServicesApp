@@ -8,4 +8,6 @@
   Run `npm i` to install the dependencies.
 
   Run `npm run dev` to start the development server.
+
+  link - https://zebra-ship-41724933.figma.site/service
   

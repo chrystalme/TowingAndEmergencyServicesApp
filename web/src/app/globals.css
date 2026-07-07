@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 17, 24, 39;       /* gray-900 - darker for readability */
+  --foreground-muted-rgb: 55, 65, 81; /* gray-700 - for secondary text */
+  --background-start-rgb: 249, 250, 251; /* gray-50 - subtle background */
+  --background-end-rgb: 255, 255, 255;
+  --primary-rgb: 29, 78, 216;         /* primary-700 - darker for contrast */
+  --primary-hover-rgb: 30, 64, 175;   /* primary-800 - for hover states */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 249, 250, 251;      /* gray-50 - light text on dark */
+    --foreground-muted-rgb: 156, 163, 175; /* gray-400 - muted text */
+    --background-start-rgb: 17, 24, 39;   /* gray-900 */
+    --background-end-rgb: 30, 41, 59;     /* gray-800 */
+    --primary-rgb: 96, 165, 250;          /* primary-400 - lighter for dark mode */
+    --primary-hover-rgb: 147, 197, 253;   /* primary-300 - hover */
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .text-primary-contrast {
+    color: rgb(var(--primary-rgb));
+  }
+  
+  .bg-primary-contrast {
+    background-color: rgb(var(--primary-rgb));
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary-700 text-white px-4 py-2 rounded-lg font-medium hover:bg-primary-800 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+  }
+
+  .btn-primary-outline {
+    @apply border-2 border-primary-700 text-primary-700 px-4 py-2 rounded-lg font-medium hover:bg-primary-700 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-900 px-4 py-2 rounded-lg font-medium hover:bg-gray-300 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2;
+  }
+
+  .btn-ghost {
+    @apply text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 hover:text-gray-900 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2;
+  }
+
+  .input-field {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white text-gray-900 placeholder:text-gray-400;
+  }
+
+  .input-field-error {
+    @apply border-red-500 focus:ring-red-500;
+  }
+
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6;
+  }
+
+  .card-hover {
+    @apply card hover:shadow-md hover:border-primary-200 transition-all duration-200;
+  }
+
+  .text-body {
+    @apply text-gray-800 leading-relaxed;
+  }
+
+  .text-body-muted {
+    @apply text-gray-600 leading-relaxed;
+  }
+
+  .text-heading {
+    @apply text-gray-900 font-semibold;
+  }
+
+  .link-primary {
+    @apply text-primary-700 hover:text-primary-800 underline-offset-2 hover:underline transition-colors;
+  }
+
+  .badge-primary {
+    @apply inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-primary-100 text-primary-800;
+  }
+
+  .badge-success {
+    @apply inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800;
+  }
+
+  .badge-warning {
+    @apply inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800;
+  }
+
+  .badge-danger {
+    @apply inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800;
+  }
+
+  .badge-gray {
+    @apply inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800;
+  }
+}

@@ -1,13 +1,1 @@
-
-  # Towing and Emergency Services App
-
-  This is a code bundle for Towing and Emergency Services App. The original project is available at https://www.figma.com/design/4Fz5TEffg8EYLIkBFu6tCT/Towing-and-Emergency-Services-App.
-
-  ## Running the code
-
-  Run `npm i` to install the dependencies.
-
-  Run `npm run dev` to start the development server.
-
-  link - https://zebra-ship-41724933.figma.site/service
-  
+['Figma prototype](https://zebra-ship-41724933.figma.site/)\n\n## 🔧 Key Features\n\n### Backend (FastAPI)\n- **Async PostgreSQL** with SQLAlchemy 2.0\n- **JWT Authentication** via FastAPI-Users\n- **Alembic Migrations** for schema management\n- **RESTful API** with CRUD for Service Requests, Vehicles, Emergency Logs\n- **Pytest** test suite with async fixtures\n\n### Frontend (Next.js 14)\n- **App Router** with TypeScript & Tailwind CSS\n- **React Hook Form** + Zod validation\n- **JWT Auth** with localStorage token management\n- **Responsive Design** matching Figma specs\n- **Jest + React Testing Library** tests\n\n### Mobile (Flutter)\n- **Provider** state management\n- **GoRouter** navigation\n- **Flutter Secure Storage** for JWT tokens\n- **HTTP** API client with interceptors\n- **Material 3** design system\n\n## 🧪 Testing\n\n```bash\n# Backend tests\ncd backend && pytest -v\n\n# Frontend tests\ncd web && npm test\n\n# Mobile tests\ncd mobile && flutter test\n```\n\n## 🐳 Docker Compose Services\n\n| Service | Port | Description |\n|---------|------|-------------|\n| `db` | 5432 | PostgreSQL database |\n| `api` | 8000 | FastAPI backend |\n| `web` | 3001 | Next.js frontend |\n\n## 🔐 Environment Variables\n\n### Backend (`.env`)\n```env\nDATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/towing\nSECRET_KEY=your-secret-key\nALGORITHM=HS256\nACCESS_TOKEN_EXPIRE_MINUTES=30\n```\n\n### Frontend (`.env.local`)\n```env\nNEXT_PUBLIC_API_URL=http://localhost:8000/api\n```\n\n## 📦 CI/CD Pipeline\n\nGitHub Actions workflow (`.github/workflows/ci-cd.yml`) runs on push/PR:\n1. **Backend** - pytest with PostgreSQL service\n2. **Frontend** - lint, type-check, test, build\n3. **Mobile** - analyze, test\n4. **Docker** - build & push multi-arch images to GHCR\n5. **Deploy** - configurable preview deployment\n\n## 📄 License\n\nMIT License - see LICENSE file for details.']

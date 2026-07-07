@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: towing
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:secret@db/towing
+      JWT_SECRET_KEY: super-secret-key
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8000/api
+    ports:
+      - "3001:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pg_data:

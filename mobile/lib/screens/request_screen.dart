@@ -1,0 +1,422 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
+import '../providers/request_provider.dart';
+import '../widgets/primary_button.dart';
+import '../widgets/text_field_widget.dart';
+
+class RequestScreen extends StatefulWidget {
+  const RequestScreen({super.key});
+
+  @override
+  State<RequestScreen> createState() => _RequestScreenState();
+}
+
+class _RequestScreenState extends State<RequestScreen> with SingleTickerProviderStateMixin {
+  final _formKey = GlobalKey<FormState>();
+  late TabController _tabController;
+  
+  // Form fields
+  final _descriptionController = TextEditingController();
+  final _locationController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  
+  String _serviceType = 'towing';
+  String _vehicleType = 'car';
+  bool _gettingLocation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _descriptionController.dispose();
+    _locationController.dispose();
+    _nameController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _getCurrentLocation() async {
+    setState(() => _gettingLocation = true);
+    try {
+      // In a real app, you'd use geolocator package
+      // For now, we'll simulate getting coordinates
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Simulate coordinates
+      const lat = 37.7749;
+      const lng = -122.4194;
+      _locationController.text = '$lat, $lng';
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location captured: 37.7749, -122.4194')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to get location: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _gettingLocation = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Request Service'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(icon: Icon(Icons.location_on), text: 'Location'),
+            Tab(icon: Icon(Icons.build), text: 'Service'),
+            Tab(icon: Icon(Icons.person), text: 'Contact'),
+          ],
+          labelColor: const Color(0xFF1D4ED8),
+          unselectedLabelColor: Colors.grey,
+          indicatorColor: const Color(0xFF1D4ED8),
+        ),
+      ),
+      body: Form(
+        key: _formKey,
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            // Tab 1: Location
+            _buildLocationTab(),
+            // Tab 2: Service Details
+            _buildServiceTab(),
+            // Tab 3: Contact Info
+            _buildContactTab(),
+          ],
+        ),
+      ),
+      bottomNavigationBar: _buildSubmitButton(),
+    );
+  }
+
+  Widget _buildLocationTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8),
+          
+          // Get Current Location Button
+          SecondaryButton(
+            text: 'Share Current Location',
+            icon: Icons.my_location,
+            isLoading: _gettingLocation,
+            onPressed: _getCurrentLocation,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Or enter address manually',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          
+          // Location Input
+          TextFieldWidget(
+            controller: _locationController,
+            label: 'Address or Landmark *',
+            hint: '123 Main St, San Francisco, CA',
+            prefixIcon: Icons.location_on_outlined,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please enter a location';
+              }
+              return null;
+            },
+          ),
+          
+          const SizedBox(height: 24),
+          
+          // Help text
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Your location helps us dispatch the nearest available tow truck. Coordinates are highlighted for accuracy.',
+                    style: TextStyle(color: Colors.blue.shade700, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServiceTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8),
+          
+          // Service Type Dropdown
+          _buildDropdown(
+            label: 'Service Type *',
+            value: _serviceType,
+            items: const [
+              {'value': 'towing', 'label': 'Emergency Towing'},
+              {'value': 'roadside', 'label': 'Roadside Assistance'},
+              {'value': 'recovery', 'label': 'Vehicle Recovery'},
+            ],
+            onChanged: (value) => setState(() => _serviceType = value!),
+            prefixIcon: Icons.build_outlined,
+          ),
+          const SizedBox(height: 16),
+          
+          // Vehicle Type Dropdown
+          _buildDropdown(
+            label: 'Vehicle Type *',
+            value: _vehicleType,
+            items: const [
+              {'value': 'car', 'label': 'Car / Sedan'},
+              {'value': 'suv', 'label': 'SUV / Crossover'},
+              {'value': 'truck', 'label': 'Truck / Van'},
+              {'value': 'motorcycle', 'label': 'Motorcycle'},
+              {'value': 'other', 'label': 'Other'},
+            ],
+            onChanged: (value) => setState(() => _vehicleType = value!),
+            prefixIcon: Icons.directions_car,
+          ),
+          const SizedBox(height: 16),
+          
+          // Description
+          TextFieldWidget(
+            controller: _descriptionController,
+            label: 'Description *',
+            hint: 'Describe the issue, vehicle condition, and any special instructions...',
+            prefixIcon: Icons.description_outlined,
+            maxLines: 5,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please provide a description';
+              }
+              if (value.length < 10) {
+                return 'Please provide more details (at least 10 characters)';
+              }
+              return null;
+            },
+          ),
+          
+          const SizedBox(height: 24),
+          
+          // Help text
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.check_circle_outline, color: Colors.green.shade700, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Be specific about the problem (flat tire, engine failure, accident, etc.) and any access issues.',
+                    style: TextStyle(color: Colors.green.shade700, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContactTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 8),
+          
+          // Name
+          TextFieldWidget(
+            controller: _nameController,
+            label: 'Full Name *',
+            hint: 'John Doe',
+            prefixIcon: Icons.person_outline,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please enter your name';
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
+          
+          // Phone
+          TextFieldWidget(
+            controller: _phoneController,
+            label: 'Phone Number *',
+            hint: '(555) 123-4567',
+            prefixIcon: Icons.phone_outlined,
+            keyboardType: TextInputType.phone,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please enter your phone number';
+              }
+              return null;
+            },
+          ),
+          
+          const SizedBox(height: 24),
+          
+          // Help text
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.purple.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.purple.shade200),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, color: Colors.purple.shade700, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'We\'ll call you to confirm details and provide an ETA. Your information is kept secure.',
+                    style: TextStyle(color: Colors.purple.shade700, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDropdown({
+    required String label,
+    required String value,
+    required List<Map<String, String>> items,
+    required ValueChanged<String?> onChanged,
+    required IconData prefixIcon,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: const Color(0xFF374151),
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          value: value,
+          decoration: InputDecoration(
+            prefixIcon: Icon(prefixIcon, color: Colors.grey.shade400),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF1D4ED8), width: 2),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          ),
+          items: items.map((item) {
+            return DropdownMenuItem(
+              value: item['value'],
+              child: Text(item['label']!),
+            );
+          }).toList(),
+          onChanged: onChanged,
+          validator: (value) => value == null ? 'Please select an option' : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return Consumer<RequestProvider>(
+      builder: (context, provider, _) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, -2),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            child: PrimaryButton(
+              text: 'Submit Request',
+              isLoading: provider.isLoading,
+              onPressed: () async {
+                if (_formKey.currentState!.validate()) {
+                  final success = await provider.createRequest(
+                    description: _descriptionController.text,
+                    location: _locationController.text,
+                  );
+                  if (success && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Service requested successfully!'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                    context.go('/dashboard');
+                  }
+                }
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+}

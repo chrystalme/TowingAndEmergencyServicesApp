@@ -105,12 +105,21 @@ class ApiClient {
     return response.data;
   }
 
-  async createServiceRequest(data: { description: string; location: string }) {
+  async createServiceRequest(data: {
+    description: string;
+    location: string;
+    service_type?: string;
+    vehicle_type?: string;
+    name?: string;
+    phone_number?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+  }) {
     const response = await this.client.post('/service-requests', data);
     return response.data;
   }
 
-  async updateServiceRequest(id: number, data: Partial<{ description: string; location: string; status: string }>) {
+  async updateServiceRequest(id: number, data: Partial<{ description: string; location: string; status: string; service_type: string; vehicle_type: string; name: string; phone_number: string; latitude: number; longitude: number }>) {
     const response = await this.client.patch(`/service-requests/${id}`, data);
     return response.data;
   }
@@ -120,14 +129,71 @@ class ApiClient {
     return response.data;
   }
 
+  // ---- Routing / dispatch ----
+
+  // Driver availability + live position (upsert).
+  async updateDriverAvailability(data: {
+    is_online?: boolean;
+    current_status?: string;
+    current_lat?: number;
+    current_lng?: number;
+  }) {
+    const response = await this.client.put('/drivers/me', data);
+    return response.data;
+  }
+
+  async getMyDriverProfile() {
+    const response = await this.client.get('/drivers/me');
+    return response.data;
+  }
+
+  // Nearest available drivers for a coordinate (preview, no assignment).
+  async getAvailableDrivers(lat: number, lng: number) {
+    const response = await this.client.get(`/dispatch/available?lat=${lat}&lng=${lng}`);
+    return response.data;
+  }
+
+  // Match the nearest driver to a pending request (creates the assignment).
+  async createDispatch(requestId: number) {
+    const response = await this.client.post('/dispatch', { request_id: requestId });
+    return response.data;
+  }
+
+  // The requester's view of a live assignment.
+  async getRequestDispatch(requestId: number) {
+    const response = await this.client.get(`/dispatch/request/${requestId}`);
+    return response.data;
+  }
+
+  // The assigned driver accepts or declines.
+  async respondDispatch(dispatchId: number, status: 'accepted' | 'declined') {
+    const response = await this.client.post(`/dispatch/${dispatchId}/respond`, { status });
+    return response.data;
+  }
+
   // Vehicle endpoints
   async getVehicles() {
     const response = await this.client.get('/vehicles');
     return response.data;
   }
 
+  async getVehicle(id: number) {
+    const response = await this.client.get(`/vehicles/${id}`);
+    return response.data;
+  }
+
   async createVehicle(data: { make: string; model: string; year: number; plate_number: string }) {
     const response = await this.client.post('/vehicles', data);
+    return response.data;
+  }
+
+  async updateVehicle(id: number, data: Partial<{ make: string; model: string; year: number; plate_number: string }>) {
+    const response = await this.client.patch(`/vehicles/${id}`, data);
+    return response.data;
+  }
+
+  async deleteVehicle(id: number) {
+    const response = await this.client.delete(`/vehicles/${id}`);
     return response.data;
   }
 

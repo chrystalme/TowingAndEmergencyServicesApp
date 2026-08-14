@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { MapPin, Truck, AlertCircle, Loader2, User, Phone } from 'lucide-react';
+import { MapPin, Truck, AlertCircle, Loader2, User, Phone, Navigation } from 'lucide-react';
 import { toast } from 'sonner';
+import apiClient from '@/lib/api';
 
 const requestSchema = z.object({
   serviceType: z.enum(['towing', 'roadside', 'recovery'], { required_error: 'Please select a service type' }),
@@ -37,6 +38,8 @@ export default function RequestPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [dispatchResult, setDispatchResult] = useState<any>(null);
 
   const {
     register,
@@ -69,6 +72,7 @@ export default function RequestPage() {
       });
 
       const { latitude, longitude } = position.coords;
+      setCoords({ lat: latitude, lng: longitude });
       // Reverse geocode to get address
       try {
         const response = await fetch(
@@ -97,6 +101,7 @@ export default function RequestPage() {
 
   const onSubmit = async (data: RequestForm) => {
     setIsLoading(true);
+    setDispatchResult(null);
     try {
       const token = localStorage.getItem('access_token');
 
@@ -106,22 +111,33 @@ export default function RequestPage() {
         return;
       }
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/service-requests`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(data),
-      });
+      // Map the camelCase form fields to the API's snake_case contract and
+      // attach the numeric coordinates captured when the user shared location.
+      const payload = {
+        service_type: data.serviceType,
+        vehicle_type: data.vehicleType,
+        name: data.name,
+        phone_number: data.phoneNumber,
+        description: data.description,
+        location: data.location,
+        latitude: coords?.lat ?? null,
+        longitude: coords?.lng ?? null,
+      };
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Request failed');
+      const created = await apiClient.createServiceRequest(payload);
+
+      // Route the nearest available driver to this situation.
+      try {
+        const matched = await apiClient.createDispatch(created.id);
+        setDispatchResult(matched.dispatch);
+        toast.success('Nearest driver dispatched to you!');
+      } catch (dispatchError: any) {
+        // Either no driver is online yet, or the request lacked coordinates.
+        const detail =
+          dispatchError?.response?.data?.detail ?? 'No driver currently available.';
+        setDispatchResult(null);
+        toast.info(`Request saved — ${detail}`);
       }
-
-      toast.success('Service requested successfully! We\'ll contact you shortly.');
-      router.push('/dashboard');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Request failed');
     } finally {
@@ -342,6 +358,37 @@ export default function RequestPage() {
               'Submit Request'
             )}
           </button>
+
+          {/* Dispatch result: shows the nearest driver routed to this request */}
+          {dispatchResult && (
+            <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Navigation className="w-5 h-5 text-green-700" />
+                <h3 className="font-semibold text-green-900">Driver Dispatched</h3>
+              </div>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div>
+                  <dt className="text-green-700/70">Driver</dt>
+                  <dd className="font-medium text-green-950">{dispatchResult.driver_email}</dd>
+                </div>
+                <div>
+                  <dt className="text-green-700/70">Distance</dt>
+                  <dd className="font-medium text-green-950">{dispatchResult.distance_km} km</dd>
+                </div>
+                <div>
+                  <dt className="text-green-700/70">ETA</dt>
+                  <dd className="font-medium text-green-950">~{dispatchResult.eta_minutes} min</dd>
+                </div>
+                <div>
+                  <dt className="text-green-700/70">Estimated Price</dt>
+                  <dd className="font-medium text-green-950">${dispatchResult.price}</dd>
+                </div>
+              </dl>
+              <p className="mt-3 text-xs text-green-700/80">
+                Status: {dispatchResult.status} · We&apos;ll keep you updated as the driver heads your way.
+              </p>
+            </div>
+          )}
         </form>
       </div>
     </div>

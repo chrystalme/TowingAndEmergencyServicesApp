@@ -36,23 +36,17 @@ async def override_get_async_session() -> AsyncSession:
         yield session
 
 
-# Override the auth module's engine and session factory for tests
-test_user_engine = create_async_engine(
-    TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestUserAsyncSessionLocal = async_sessionmaker(
-    bind=test_user_engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-)
+# Override the auth module's engine and session factory for tests.
+# NOTE: we intentionally point the USER database at the SAME in-memory engine as
+# the app data. Keeping them split (as originally) put `users` in a separate
+# SQLite DB from `drivers`/`service_requests`/`dispatches`, which broke any query
+# that joins User with app data (e.g. nearest-driver dispatch). In production all
+# tables share one Postgres DB, so the single-engine test setup is the faithful one.
 
 
 async def override_get_user_db():
-    """Override for user database in tests."""
-    async with TestUserAsyncSessionLocal() as session:
+    """Override for user database in tests - uses the same engine as app data."""
+    async with TestAsyncSessionLocal() as session:
         from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
         from app.models import User
         yield SQLAlchemyUserDatabase(session, User)
@@ -65,18 +59,12 @@ async def override_get_user_manager(
     from app.core.auth import UserManager
     yield UserManager(user_db)
 
-
 @pytest_asyncio.fixture(autouse=True)
 async def init_db():
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    # Also create tables in the test user engine
-    async with test_user_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     yield
     async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    async with test_user_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
 

@@ -43,8 +43,14 @@ class UserRead(UserBase):
 # ServiceRequest schemas
 # ---------------------------------------------------------------------------
 class ServiceRequestBase(BaseModel):
+    service_type: str = Field("towing", min_length=1, max_length=50)
+    vehicle_type: str = Field("car", min_length=1, max_length=50)
+    name: str = Field("", min_length=0, max_length=200)
+    phone_number: str = Field("", min_length=0, max_length=30)
     description: str = Field(..., min_length=1, max_length=2000)
     location: str = Field(..., min_length=1, max_length=500)
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
 
 
 class ServiceRequestCreate(ServiceRequestBase):
@@ -52,9 +58,15 @@ class ServiceRequestCreate(ServiceRequestBase):
 
 
 class ServiceRequestUpdate(BaseModel):
+    service_type: Optional[str] = Field(None, min_length=1, max_length=50)
+    vehicle_type: Optional[str] = Field(None, min_length=1, max_length=50)
+    name: Optional[str] = None
+    phone_number: Optional[str] = Field(None, min_length=0, max_length=30)
     description: Optional[str] = Field(None, min_length=1, max_length=2000)
     location: Optional[str] = Field(None, min_length=1, max_length=500)
-    status: Optional[str] = Field(None, pattern="^(pending|assigned|in_progress|completed|cancelled)$")
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
+    status: Optional[str] = Field(None, pattern="^(pending|assigned|enroute|in_progress|completed|cancelled)$")
 
 
 class ServiceRequestRead(ServiceRequestBase):
@@ -66,6 +78,72 @@ class ServiceRequestRead(ServiceRequestBase):
 
     class Config:
         from_attributes = True
+
+
+# ---------------------------------------------------------------------------
+# Driver schemas (availability + live position)
+# ---------------------------------------------------------------------------
+class DriverUpdate(BaseModel):
+    is_online: Optional[bool] = None
+    # available | enroute | off_duty
+    current_status: Optional[str] = Field(
+        None, pattern="^(available|enroute|off_duty)$"
+    )
+    current_lat: Optional[float] = Field(None, ge=-90, le=90)
+    current_lng: Optional[float] = Field(None, ge=-180, le=180)
+
+
+class DriverRead(BaseModel):
+    id: int
+    user_id: int
+    is_online: bool
+    current_status: str
+    current_lat: Optional[float] = None
+    current_lng: Optional[float] = None
+    last_position_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# ---------------------------------------------------------------------------
+# Dispatch schemas (a matched driver<->request assignment)
+# ---------------------------------------------------------------------------
+class DispatchRead(BaseModel):
+    id: int
+    request_id: int
+    driver_id: int
+    status: str
+    distance_km: Optional[float] = None
+    eta_minutes: Optional[float] = None
+    price: Optional[float] = None
+    created_at: datetime
+    responded_at: Optional[datetime] = None
+    # Denormalized for display convenience: who was matched and where they are.
+    driver_name: Optional[str] = None
+    driver_email: Optional[str] = None
+    driver_lat: Optional[float] = None
+    driver_lng: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Describes a nearby candidate driver returned by the matcher before assignment.
+class DriverCandidate(BaseModel):
+    driver_id: int
+    name: Optional[str] = None
+    email: str
+    current_lat: float
+    current_lng: float
+    distance_km: float
+    eta_minutes: float
+
+
+class DispatchMatchResponse(BaseModel):
+    dispatch: DispatchRead
+    request_status: str
+    candidates: list[DriverCandidate]
 
 
 # ---------------------------------------------------------------------------

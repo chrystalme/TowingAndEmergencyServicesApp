@@ -25,6 +25,8 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
   String _serviceType = 'towing';
   String _vehicleType = 'car';
   bool _gettingLocation = false;
+  double? _latitude;
+  double? _longitude;
 
   @override
   void initState() {
@@ -49,9 +51,11 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
       // For now, we'll simulate getting coordinates
       await Future.delayed(const Duration(seconds: 2));
       
-      // Simulate coordinates
+      // Simulate coordinates (a real geolocator package replaces this).
       const lat = 37.7749;
       const lng = -122.4194;
+      _latitude = lat;
+      _longitude = lng;
       _locationController.text = '$lat, $lng';
       
       if (mounted) {
@@ -345,7 +349,7 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
-          value: value,
+          initialValue: value,
           decoration: InputDecoration(
             prefixIcon: Icon(prefixIcon, color: Colors.grey.shade400),
             filled: true,
@@ -386,7 +390,7 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
             color: Colors.white,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 10,
                 offset: const Offset(0, -2),
               ),
@@ -401,6 +405,12 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
                   final success = await provider.createRequest(
                     description: _descriptionController.text,
                     location: _locationController.text,
+                    serviceType: _serviceType,
+                    vehicleType: _vehicleType,
+                    name: _nameController.text,
+                    phoneNumber: _phoneController.text,
+                    latitude: _latitude,
+                    longitude: _longitude,
                   );
                   if (success && context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(

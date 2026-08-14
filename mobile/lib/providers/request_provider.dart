@@ -29,6 +29,12 @@ class RequestProvider with ChangeNotifier {
   Future<bool> createRequest({
     required String description,
     required String location,
+    String serviceType = 'towing',
+    String vehicleType = 'car',
+    String name = '',
+    String phoneNumber = '',
+    double? latitude,
+    double? longitude,
   }) async {
     _setLoading(true);
     _clearError();
@@ -37,6 +43,12 @@ class RequestProvider with ChangeNotifier {
       final request = await apiService.createServiceRequest(
         description: description,
         location: location,
+        serviceType: serviceType,
+        vehicleType: vehicleType,
+        name: name,
+        phoneNumber: phoneNumber,
+        latitude: latitude,
+        longitude: longitude,
       );
       _requests.insert(0, request);
       notifyListeners();

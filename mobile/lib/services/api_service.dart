@@ -98,6 +98,17 @@ class ApiService {
     return _handleResponse(response);
   }
 
+  // PUT request
+  Future<dynamic> put(String endpoint, Map<String, dynamic> body, {bool auth = true}) async {
+    final headers = await _headers(auth: auth);
+    final response = await http.put(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: headers,
+      body: json.encode(body),
+    );
+    return _handleResponse(response);
+  }
+
   // DELETE request
   Future<dynamic> delete(String endpoint, {bool auth = true}) async {
     final headers = await _headers(auth: auth);
@@ -110,7 +121,8 @@ class ApiService {
 
   // Auth endpoints
   Future<Map<String, dynamic>> register(String email, String password) async {
-    return post('/auth/register', {'email': email, 'password': password}, auth: false);
+    return (await post('/auth/register', {'email': email, 'password': password}, auth: false))
+        as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
@@ -134,7 +146,7 @@ class ApiService {
 
   // Service Request endpoints
   Future<List<dynamic>> getServiceRequests() async {
-    return get('/service-requests');
+    return (await get('/service-requests')) as List<dynamic>;
   }
 
   Future<dynamic> getServiceRequest(int id) async {
@@ -144,11 +156,64 @@ class ApiService {
   Future<dynamic> createServiceRequest({
     required String description,
     required String location,
+    String serviceType = 'towing',
+    String vehicleType = 'car',
+    String name = '',
+    String phoneNumber = '',
+    double? latitude,
+    double? longitude,
   }) async {
     return post('/service-requests', {
       'description': description,
       'location': location,
+      'service_type': serviceType,
+      'vehicle_type': vehicleType,
+      'name': name,
+      'phone_number': phoneNumber,
+      'latitude': latitude,
+      'longitude': longitude,
     });
+  }
+
+  // ---- Routing / dispatch ----
+
+  // Driver availability + live position (upsert).
+  Future<dynamic> updateDriverAvailability({
+    required bool isOnline,
+    String currentStatus = 'available',
+    double? currentLat,
+    double? currentLng,
+  }) async {
+    return put('/drivers/me', {
+      'is_online': isOnline,
+      'current_status': currentStatus,
+      'current_lat': currentLat,
+      'current_lng': currentLng,
+    });
+  }
+
+  Future<dynamic> getMyDriverProfile() async {
+    return get('/drivers/me');
+  }
+
+  // Nearest available drivers for a coordinate (preview, no assignment).
+  Future<List<dynamic>> getAvailableDrivers(double lat, double lng) async {
+    return (await get('/dispatch/available?lat=$lat&lng=$lng')) as List<dynamic>;
+  }
+
+  // Match the nearest driver to a pending request.
+  Future<dynamic> createDispatch(int requestId) async {
+    return post('/dispatch', {'request_id': requestId});
+  }
+
+  // The requester's view of a live assignment.
+  Future<dynamic> getRequestDispatch(int requestId) async {
+    return get('/dispatch/request/$requestId');
+  }
+
+  // The assigned driver accepts or declines.
+  Future<dynamic> respondDispatch(int dispatchId, String status) async {
+    return post('/dispatch/$dispatchId/respond', {'status': status});
   }
 
   Future<dynamic> updateServiceRequest(int id, Map<String, dynamic> data) async {
@@ -161,7 +226,7 @@ class ApiService {
 
   // Vehicle endpoints
   Future<List<dynamic>> getVehicles() async {
-    return get('/vehicles');
+    return (await get('/vehicles')) as List<dynamic>;
   }
 
   Future<dynamic> createVehicle({
@@ -180,7 +245,7 @@ class ApiService {
 
   // Emergency Log endpoints
   Future<List<dynamic>> getEmergencyLogs() async {
-    return get('/emergency-logs');
+    return (await get('/emergency-logs')) as List<dynamic>;
   }
 
   Future<dynamic> createEmergencyLog({
@@ -195,7 +260,7 @@ class ApiService {
 
   // Health check
   Future<Map<String, dynamic>> healthCheck() async {
-    return get('/db-ping', auth: false);
+    return (await get('/db-ping', auth: false)) as Map<String, dynamic>;
   }
 }
 

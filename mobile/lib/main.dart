@@ -3,10 +3,13 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'providers/auth_provider.dart';
 import 'providers/request_provider.dart';
+import 'providers/driver_provider.dart';
 import 'screens/login_screen.dart';
+import 'screens/register_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/request_screen.dart';
 import 'screens/request_list_screen.dart';
+import 'screens/driver_console_screen.dart';
 
 void main() {
   runApp(const TowingEmergencyApp());
@@ -21,6 +24,7 @@ class TowingEmergencyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => RequestProvider()),
+        ChangeNotifierProvider(create: (_) => DriverProvider()),
       ],
       child: MaterialApp.router(
         title: 'Towing & Emergency Services',
@@ -83,6 +87,10 @@ final _router = GoRouter(
       builder: (context, state) => const LoginScreen(),
     ),
     GoRoute(
+      path: '/register',
+      builder: (context, state) => const RegisterScreen(),
+    ),
+    GoRoute(
       path: '/dashboard',
       builder: (context, state) => const DashboardScreen(),
     ),
@@ -94,19 +102,23 @@ final _router = GoRouter(
       path: '/requests',
       builder: (context, state) => const RequestListScreen(),
     ),
+    GoRoute(
+      path: '/driver',
+      builder: (context, state) => const DriverConsoleScreen(),
+    ),
   ],
   redirect: (context, state) {
     final authProvider = context.read<AuthProvider>();
     final isLoggedIn = authProvider.isLoggedIn;
-    final isLoggingIn = state.matchedLocation == '/login';
+    final isAuthScreen = state.matchedLocation == '/login' || state.matchedLocation == '/register';
 
-    // Redirect to login if not authenticated
-    if (!isLoggedIn && !isLoggingIn) {
+    // Redirect to login if not authenticated (auth screens are exempt)
+    if (!isLoggedIn && !isAuthScreen) {
       return '/login';
     }
 
-    // Redirect to dashboard if already logged in and trying to access login
-    if (isLoggedIn && isLoggingIn) {
+    // Redirect to dashboard if already logged in and trying to access an auth screen
+    if (isLoggedIn && isAuthScreen) {
       return '/dashboard';
     }
 

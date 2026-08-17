@@ -5,7 +5,6 @@ import '../providers/auth_provider.dart';
 import '../providers/request_provider.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/stat_card.dart';
-import '../screens/request_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -57,8 +56,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 builder: (context, provider, _) {
                   final total = provider.requests.length;
                   final pending = provider.requests.where((r) => r['status'] == 'pending').length;
-                  final inProgress = provider.requests.where((r) => r['status'] == 'in_progress').length;
-                  final completed = provider.requests.where((r) => r['status'] == 'completed').length;
 
                   return Row(
                     children: [
@@ -117,8 +114,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
               // Request Service button
               PrimaryButton(
                 text: 'Request Service',
-                icon: Icons.add,
                 onPressed: () => context.go('/request'),
+              ),
+              const SizedBox(height: 12),
+              // Driver Console button — go active as a driver or go offline
+              SecondaryButton(
+                text: 'Driver Console',
+                icon: Icons.local_shipping,
+                onPressed: () => context.go('/driver'),
               ),
               const SizedBox(height: 24),
 
@@ -184,7 +187,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: provider.requests.length > 5 ? 5 : provider.requests.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
                       final request = provider.requests[index];
                       return _buildRequestCard(context, request);
@@ -239,7 +242,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xFF1D4ED8).withOpacity(0.1),
+            color: const Color(0xFF1D4ED8).withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
           child: const Icon(Icons.local_shipping, color: Color(0xFF1D4ED8), size: 24),
@@ -276,7 +279,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         trailing: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: statusColor.withOpacity(0.1),
+            color: statusColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(16),
           ),
           child: Row(

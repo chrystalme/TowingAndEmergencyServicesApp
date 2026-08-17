@@ -5,23 +5,25 @@ import '../providers/auth_provider.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/text_field_widget.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmController = TextEditingController();
   bool _obscurePassword = true;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmController.dispose();
     super.dispose();
   }
 
@@ -36,15 +38,10 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Logo/Title
-                const Icon(
-                  Icons.local_shipping,
-                  size: 80,
-                  color: Color(0xFF1D4ED8),
-                ),
+                const Icon(Icons.local_shipping, size: 80, color: Color(0xFF1D4ED8)),
                 const SizedBox(height: 16),
                 Text(
-                  'Towing & Emergency',
+                  'Create Account',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
@@ -53,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Sign in to request roadside assistance',
+                  'Join to request roadside assistance',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: Colors.grey.shade600,
@@ -61,7 +58,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 40),
 
-                // Form
                 Form(
                   key: _formKey,
                   child: Column(
@@ -86,7 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       TextFieldWidget(
                         controller: _passwordController,
                         label: 'Password',
-                        hint: 'Enter your password',
+                        hint: 'At least 8 characters',
                         obscureText: _obscurePassword,
                         prefixIcon: Icons.lock_outline,
                         suffixIcon: IconButton(
@@ -100,40 +96,51 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
-                            return 'Please enter your password';
+                            return 'Please enter a password';
                           }
-                          if (value.length < 6) {
-                            return 'Password must be at least 6 characters';
+                          if (value.length < 8) {
+                            return 'Password must be at least 8 characters';
                           }
                           return null;
                         },
                       ),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () {
-                            // TODO: Implement forgot password
-                          },
-                          child: const Text('Forgot Password?'),
-                        ),
+                      const SizedBox(height: 16),
+                      TextFieldWidget(
+                        controller: _confirmController,
+                        label: 'Confirm Password',
+                        hint: 'Re-enter your password',
+                        obscureText: _obscurePassword,
+                        prefixIcon: Icons.lock_outline,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please confirm your password';
+                          }
+                          if (value != _passwordController.text) {
+                            return "Passwords don't match";
+                          }
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 24),
 
-                      // Login Button
                       Consumer<AuthProvider>(
                         builder: (context, auth, _) {
                           return PrimaryButton(
-                            text: 'Sign In',
+                            text: 'Create Account',
                             isLoading: auth.isLoading,
                             onPressed: () async {
                               if (_formKey.currentState!.validate()) {
-                                final success = await auth.login(
+                                final success = await auth.register(
                                   _emailController.text.trim(),
                                   _passwordController.text,
                                 );
                                 if (success && context.mounted) {
-                                  context.go('/dashboard');
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Account created. Please sign in.'),
+                                    ),
+                                  );
+                                  context.go('/login');
                                 }
                               }
                             },
@@ -142,7 +149,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Error message
                       Consumer<AuthProvider>(
                         builder: (context, auth, _) {
                           if (auth.error != null) {
@@ -171,17 +177,16 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 24),
 
-                      // Register link
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            "Don't have an account? ",
+                            'Already have an account? ',
                             style: TextStyle(color: Colors.grey.shade600),
                           ),
                           TextButton(
-                            onPressed: () => context.go('/register'),
-                            child: const Text('Sign Up'),
+                            onPressed: () => context.go('/login'),
+                            child: const Text('Sign In'),
                           ),
                         ],
                       ),

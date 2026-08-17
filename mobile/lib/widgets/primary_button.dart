@@ -26,7 +26,7 @@ class PrimaryButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: backgroundColor ?? Theme.of(context).colorScheme.primary,
           foregroundColor: textColor ?? Colors.white,
-          disabledBackgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+          disabledBackgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),

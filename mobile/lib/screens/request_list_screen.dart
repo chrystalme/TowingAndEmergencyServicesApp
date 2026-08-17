@@ -1,1 +1,283 @@
-[{'appBar': "AppBar(\n        title: const Text('My Requests')", 'leading': 'IconButton(\n          icon: const Icon(Icons.arrow_back)', 'onPressed': 'context.pop()', 'body': 'Consumer<RequestProvider>(\n        builder: (context', 'Center(child': 'CircularProgressIndicator());'}, {'child': 'Column(\n                mainAxisAlignment: MainAxisAlignment.center', 'children': ["Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),\n                  const SizedBox(height: 16),\n                  Text(\n                    'Failed to load requests',\n                    style: Theme.of(context).textTheme.titleMedium,\n                  ),\n                  const SizedBox(height: 8),\n                  Text(\n                    provider.error!,\n                    style: TextStyle(color: Colors.grey.shade600),\n                    textAlign: TextAlign.center,\n                  ),\n                  const SizedBox(height: 16),\n                  ElevatedButton.icon(\n                    onPressed: () => provider.fetchRequests(),\n                    icon: const Icon(Icons.refresh),\n                    label: const Text('Retry'),\n                  ),\n                ],\n              ),\n            );\n          }\n\n          if (provider.requests.isEmpty) {\n            return Center(\n              child: Column(\n                mainAxisAlignment: MainAxisAlignment.center,\n                children: [\n                  Icon(Icons.inbox_outlined, size: 64, color: Colors.grey.shade400),\n                  const SizedBox(height: 16),\n                  Text(\n                    'No service requests yet',\n                    style: Theme.of(context).textTheme.titleLarge?.copyWith(\n                      color: Colors.grey.shade600,\n                    ),\n                  ),\n                  const SizedBox(height: 8),\n                  Text(\n                    'Your service requests will appear here',\n                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(\n                      color: Colors.grey.shade500,\n                    ),\n                  ),\n                  const SizedBox(height: 24),\n                  ElevatedButton.icon(\n                    onPressed: () => context.go('/request'),\n                    icon: const Icon(Icons.add),\n                    label: const Text('Request Service'),\n                  ),\n                ],\n              ),\n            );\n          }\n\n          return RefreshIndicator(\n            onRefresh: () => provider.fetchRequests(),\n            child: ListView.separated(\n              padding: const EdgeInsets.all(16),\n              itemCount: provider.requests.length,\n              separatorBuilder: (_, __) => const SizedBox(height: 12),\n              itemBuilder: (context, index) {\n                final request = provider.requests[index];\n                return _buildRequestCard(context, request);\n              },\n            ),\n          );\n        },\n      ),\n      floatingActionButton: FloatingActionButton.extended(\n        onPressed: () => context.go('/request'),\n        icon: const Icon(Icons.add),\n        label: const Text('New Request'),\n        backgroundColor: const Color(0xFF1D4ED8),\n      ),\n    );\n  }\n\n  Widget _buildRequestCard(BuildContext context, Map<String, dynamic> request) {\n    final status = request['status'] as String? ?? 'pending';\n    Color statusColor;\n    IconData statusIcon;\n\n    switch (status) {\n      case 'pending':\n        statusColor = Colors.orange;\n        statusIcon = Icons.pending;\n        break;\n      case 'in_progress':\n        statusColor = Colors.blue;\n        statusIcon = Icons.local_shipping;\n        break;\n      case 'completed':\n        statusColor = Colors.green;\n        statusIcon = Icons.check_circle;\n        break;\n      case 'cancelled':\n        statusColor = Colors.red;\n        statusIcon = Icons.cancel;\n        break;\n      default:\n        statusColor = Colors.grey;\n        statusIcon = Icons.help;\n    }\n\n    return Card(\n      elevation: 0,\n      shape: RoundedRectangleBorder(\n        borderRadius: BorderRadius.circular(16),\n        side: BorderSide(color: Colors.grey.shade200),\n      ),\n      child: InkWell(\n        onTap: () {},\n        borderRadius: BorderRadius.circular(16),\n        child: Padding(\n          padding: const EdgeInsets.all(16),\n          child: Column(\n            crossAxisAlignment: CrossAxisAlignment.start,\n            children: [\n              Row(\n                children: [\n                  Container(\n                    padding: const EdgeInsets.all(10),\n                    decoration: BoxDecoration(\n                      color: const Color(0xFF1D4ED8).withOpacity(0.1),\n                      borderRadius: BorderRadius.circular(10),\n                    ),\n                    child: const Icon(Icons.local_shipping, color: Color(0xFF1D4ED8), size: 24),\n                  ),\n                  const SizedBox(width: 12),\n                  Expanded(\n                    child: Column(\n                      crossAxisAlignment: CrossAxisAlignment.start,\n                      children: [\n                        Text(\n                          request['description'] as String? ?? 'Service Request',\n                          style: const TextStyle(\n                            fontWeight: FontWeight.w600,\n                            color: Color(0xFF111827),\n                            fontSize: 16,\n                          ),\n                          maxLines: 1,\n                          overflow: TextOverflow.ellipsis,\n                        ),\n                        const SizedBox(height: 2),\n                        Row(\n                          children: [\n                            Icon(Icons.location_on_outlined, size: 14, color: Colors.grey.shade500),\n                            const SizedBox(width: 4),\n                            Expanded(\n                              child: Text(\n                                request['location'] as String? ?? '',\n                                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),\n                                maxLines: 1,\n                                overflow: TextOverflow.ellipsis,\n                              ),\n                            ),\n                          ],\n                        ),\n                      ],\n                    ),\n                  ),\n                  Container(\n                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),\n                    decoration: BoxDecoration(\n                      color: statusColor.withOpacity(0.1),\n                      borderRadius: BorderRadius.circular(16),\n                    ),\n                    child: Row(\n                      mainAxisSize: MainAxisSize.min,\n                      children: [\n                        Icon(statusIcon, size: 14, color: statusColor),\n                        const SizedBox(width: 4),\n                        Text(\n                          status.replaceAll('_', ' ').toUpperCase(),\n                          style: TextStyle(\n                            color: statusColor,\n                            fontSize: 11,\n                            fontWeight: FontWeight.w600,\n                          ),\n                        ),\n                      ],\n                    ),\n                  ),\n                ],\n              ),\n              const SizedBox(height: 12),\n              Row(\n                children: [\n                  _buildInfoChip(\n                    icon: Icons.build,\n                    label: request['service_type'] as String? ?? 'N/A',\n                  ),\n                  const SizedBox(width: 8),\n                  _buildInfoChip(\n                    icon: Icons.directions_car,\n                    label: request['vehicle_type'] as String? ?? 'N/A',\n                  ),\n                  const Spacer(),\n                  Text(\n                    _formatDate(request['created_at']),\n                    style: TextStyle(color: Colors.grey.shade500, fontSize: 12),\n                  ),\n                ],\n              ),\n            ],\n          ),\n        ),\n      ),\n    );\n  }\n\n  Widget _buildInfoChip({required IconData icon, required String label}) {\n    return Container(\n      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),\n      decoration: BoxDecoration(\n        color: Colors.grey.shade100,\n        borderRadius: BorderRadius.circular(12),\n      ),\n      child: Row(\n        mainAxisSize: MainAxisSize.min,\n        children: [\n          Icon(icon, size: 14, color: Colors.grey.shade600),\n          const SizedBox(width: 4),\n          Text(\n            label,\n            style: TextStyle(\n              color: Colors.grey.shade700,\n              fontSize: 12,\n              fontWeight: FontWeight.w500,\n            ),\n          ),\n        ],\n      ),\n    );\n  }\n\n  String _formatDate(dynamic date) {\n    if (date == null) return '';\n    try {\n      final dt = DateTime.parse(date.toString());\n      return '${dt.month}/${dt.day}/${dt.year}';\n    } catch (_) {\n      return '';\n    }\n  }\n}"]}]
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
+import '../providers/request_provider.dart';
+
+class RequestListScreen extends StatefulWidget {
+  const RequestListScreen({super.key});
+
+  @override
+  State<RequestListScreen> createState() => _RequestListScreenState();
+}
+
+class _RequestListScreenState extends State<RequestListScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('My Requests'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => context.read<RequestProvider>().fetchRequests(),
+        child: Consumer<RequestProvider>(
+          builder: (context, provider, _) {
+            if (provider.isLoading && provider.requests.isEmpty) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (provider.error != null && provider.requests.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Failed to load requests',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      provider.error!,
+                      style: TextStyle(color: Colors.grey.shade600),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () => provider.fetchRequests(),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            if (provider.requests.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.inbox_outlined, size: 64, color: Colors.grey.shade400),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No service requests yet',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Your service requests will appear here',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () => context.go('/request'),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Request Service'),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return RefreshIndicator(
+              onRefresh: () => provider.fetchRequests(),
+              child: ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: provider.requests.length,
+                separatorBuilder: (_, index) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final request = provider.requests[index];
+                  return _buildRequestCard(context, request);
+                },
+              ),
+            );
+          },
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.go('/request'),
+        icon: const Icon(Icons.add),
+        label: const Text('New Request'),
+        backgroundColor: const Color(0xFF1D4ED8),
+      ),
+    );
+  }
+
+  Widget _buildRequestCard(BuildContext context, Map<String, dynamic> request) {
+    final status = request['status'] as String? ?? 'pending';
+    Color statusColor;
+    IconData statusIcon;
+
+    switch (status) {
+      case 'pending':
+        statusColor = Colors.orange;
+        statusIcon = Icons.pending;
+        break;
+      case 'in_progress':
+        statusColor = Colors.blue;
+        statusIcon = Icons.local_shipping;
+        break;
+      case 'completed':
+        statusColor = Colors.green;
+        statusIcon = Icons.check_circle;
+        break;
+      case 'cancelled':
+        statusColor = Colors.red;
+        statusIcon = Icons.cancel;
+        break;
+      default:
+        statusColor = Colors.grey;
+        statusIcon = Icons.help;
+    }
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: InkWell(
+        onTap: () {}, // Detail navigation reserved for a future screen
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1D4ED8).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.local_shipping, color: Color(0xFF1D4ED8), size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          request['description'] as String? ?? 'Service Request',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF111827),
+                            fontSize: 16,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Icon(Icons.location_on_outlined, size: 14, color: Colors.grey.shade500),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                request['location'] as String? ?? '',
+                                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(statusIcon, size: 14, color: statusColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          status.replaceAll('_', ' ').toUpperCase(),
+                          style: TextStyle(
+                            color: statusColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _buildInfoChip(
+                    icon: Icons.build,
+                    label: request['service_type'] as String? ?? 'N/A',
+                  ),
+                  const SizedBox(width: 8),
+                  _buildInfoChip(
+                    icon: Icons.directions_car,
+                    label: request['vehicle_type'] as String? ?? 'N/A',
+                  ),
+                  const Spacer(),
+                  Text(
+                    _formatDate(request['created_at']),
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoChip({required IconData icon, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.grey.shade600),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(dynamic date) {
+    if (date == null) return '';
+    try {
+      final dt = DateTime.parse(date.toString());
+      return '${dt.month}/${dt.day}/${dt.year}';
+    } catch (_) {
+      return '';
+    }
+  }
+}

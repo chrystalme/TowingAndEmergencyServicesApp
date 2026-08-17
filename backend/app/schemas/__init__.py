@@ -76,6 +76,19 @@ class ServiceRequestRead(ServiceRequestBase):
     created_at: datetime
     updated_at: datetime
 
+    # Admin / management display extras. Populated server-side when a dispatch
+    # exists and the caller is allowed to see the broader picture. These are not
+    # ORM attributes, so they default to None unless explicitly set.
+    requester_email: Optional[str] = None
+    requester_name: Optional[str] = None
+    dispatch_status: Optional[str] = None
+    driver_email: Optional[str] = None
+    driver_lat: Optional[float] = None
+    driver_lng: Optional[float] = None
+    price: Optional[float] = None
+    distance_km: Optional[float] = None
+    eta_minutes: Optional[float] = None
+
     class Config:
         from_attributes = True
 

@@ -98,3 +98,33 @@ async def auth_headers(client: AsyncClient, test_user: dict):
     assert response.status_code == 200
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def admin_factory(client: AsyncClient):
+    """Factory that creates an admin/superuser directly in the shared test DB
+    and returns login headers for them (registration can't grant superuser)."""
+    from fastapi_users.password import PasswordHelper
+    from app.models import User
+
+    async def _make(email: str, password: str = "adminpass123"):
+        async with TestAsyncSessionLocal() as session:
+            session.add(
+                User(
+                    email=email,
+                    hashed_password=PasswordHelper().hash(password),
+                    is_superuser=True,
+                    is_verified=True,
+                    role="admin",
+                )
+            )
+            await session.commit()
+        login = await client.post(
+            "/api/auth/jwt/login",
+            data={"username": email, "password": password},
+        )
+        assert login.status_code == 200
+        token = login.json()["access_token"]
+        return {"Authorization": f"Bearer {token}"}
+
+    return _make

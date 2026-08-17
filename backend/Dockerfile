@@ -1,17 +1,14 @@
 # Build stage
 FROM python:3.12-slim AS builder
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
 # Set working directory
 WORKDIR /app
 
 # Copy dependency files
 COPY requirements.txt .
 
-# Install dependencies using uv
-RUN uv pip install --system -r requirements.txt
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Runtime stage
 FROM python:3.12-slim AS runtime

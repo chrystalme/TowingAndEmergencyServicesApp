@@ -1,1 +1,256 @@
-['Figma prototype](https://zebra-ship-41724933.figma.site/)\n\n## 🔧 Key Features\n\n### Backend (FastAPI)\n- **Async PostgreSQL** with SQLAlchemy 2.0\n- **JWT Authentication** via FastAPI-Users\n- **Alembic Migrations** for schema management\n- **RESTful API** with CRUD for Service Requests, Vehicles, Emergency Logs\n- **Pytest** test suite with async fixtures\n\n### Frontend (Next.js 14)\n- **App Router** with TypeScript & Tailwind CSS\n- **React Hook Form** + Zod validation\n- **JWT Auth** with localStorage token management\n- **Responsive Design** matching Figma specs\n- **Jest + React Testing Library** tests\n\n### Mobile (Flutter)\n- **Provider** state management\n- **GoRouter** navigation\n- **Flutter Secure Storage** for JWT tokens\n- **HTTP** API client with interceptors\n- **Material 3** design system\n\n## 🧪 Testing\n\n```bash\n# Backend tests\ncd backend && pytest -v\n\n# Frontend tests\ncd web && npm test\n\n# Mobile tests\ncd mobile && flutter test\n```\n\n## 🐳 Docker Compose Services\n\n| Service | Port | Description |\n|---------|------|-------------|\n| `db` | 5432 | PostgreSQL database |\n| `api` | 8000 | FastAPI backend |\n| `web` | 3001 | Next.js frontend |\n\n## 🔐 Environment Variables\n\n### Backend (`.env`)\n```env\nDATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/towing\nSECRET_KEY=your-secret-key\nALGORITHM=HS256\nACCESS_TOKEN_EXPIRE_MINUTES=30\n```\n\n### Frontend (`.env.local`)\n```env\nNEXT_PUBLIC_API_URL=http://localhost:8000/api\n```\n\n## 📦 CI/CD Pipeline\n\nGitHub Actions workflow (`.github/workflows/ci-cd.yml`) runs on push/PR:\n1. **Backend** - pytest with PostgreSQL service\n2. **Frontend** - lint, type-check, test, build\n3. **Mobile** - analyze, test\n4. **Docker** - build & push multi-arch images to GHCR\n5. **Deploy** - configurable preview deployment\n\n## 📄 License\n\nMIT License - see LICENSE file for details.']
+# TowAssist — Towing & Emergency Services App
+
+A monorepo for a towing & emergency-services platform: a **FastAPI** backend
+serving a **Next.js 14** web app and a **Flutter** mobile app. A client requests
+a tow/roadside help, the backend matches the nearest available driver
+(Haversine + server-side pricing), and the driver accepts and comes out.
+
+## Repo layout
+
+| Path        | What it is                                                        |
+|-------------|-------------------------------------------------------------------|
+| `backend/`  | FastAPI + async SQLAlchemy 2.0 + asyncpg, FastAPI-Users JWT auth, Alembic migrations |
+| `web/`      | Next.js 14 App Router web app (TypeScript, Tailwind, MUI, RHF + Zod, axios) |
+| `mobile/`   | Flutter app (Provider, GoRouter, flutter_secure_storage, http) |
+| `docker-compose.yml` | Postgres + API + web for one-command local stack |
+
+## Prerequisites
+
+- Docker (with `docker compose` v2) for the full stack, or a local Postgres.
+- Python 3.12 + `uv` (for the backend venv) if you run the backend outside Docker.
+- Node 18+ (for `web/`) and Flutter 3.x (for `mobile/`).
+
+## Quick start (Docker)
+
+```bash
+docker compose up -d --build
+```
+
+| Service | URL        | Notes                        |
+|---------|------------|------------------------------|
+| Web     | http://localhost:3001 | Next.js frontend           |
+| API     | http://localhost:8000 | FastAPI (docs at `/docs`) |
+| DB      | localhost:5432         | Postgres 16, db `towing`  |
+
+> The web container forwards `3001 → 3000` (the app runs on port 3000 inside the
+> container). Use `http://localhost:3001`.
+
+## Demo accounts (seeded)
+
+The database ships pre-loaded with demo users so you can log straight in. All
+passwords work against the live login endpoint (they are hashed with the same
+Argon2 helper FastAPI-Users verifies against).
+
+| Role     | Email                | Password       | What you can do                        |
+|----------|----------------------|----------------|----------------------------------------|
+| **Admin** | `admin@towassist.com` | `Admin123!` | `is_superuser`; all users/routes |
+| Driver   | `dan@towassist.com`   | `Driver123!`   | Driver Console, accept dispatches      |
+| Driver   | `mercy@towassist.com` | `Driver123!`   | Driver Console, accept dispatches      |
+| Commuter | `alice@towassist.com` | `Commuter123!` | Request service, view requests         |
+| Commuter | `bob@towassist.com`   | `Commuter123!` | Request service, view requests         |
+
+Both drivers are seeded **online + available** with coordinates near the demo
+requests, so dispatch always has a candidate to match.
+
+### Seeded data
+
+- 5 users (2 drivers, 2 commuters, 1 admin)
+- 2 `drivers` records — `dan` (online, available) and `mercy` (online, available)
+- 3 `service_requests`:
+  - id 1 — **alice**, `pending` tow (not yet dispatched → ideal for the walkthrough)
+  - id 2 — **bob**, `enroute` road-side help, already matched to **dan** (`accepted`)
+  - id 3 — **alice**, `completed` recovery (shows under History)
+- 3 `vehicles` — alice's Camry, bob's CR-V, dan's tow truck
+- 2 `emergency_logs`, 1 `dispatch` (dan → bob's request, priced server-side)
+
+## Running the seed yourself
+
+The seed lives at `backend/app/seed.py` (idempotent — safe to run repeatedly;
+existing entities are reused and tables are only populated when empty).
+
+With Docker compose running:
+
+```bash
+docker compose exec api sh -c "cd /app && python -m app.seed"
+```
+
+Or against a local venv + Postgres:
+
+```bash
+cd backend
+source .venv/bin/activate
+DATABASE_URL=postgresql+asyncpg://postgres:secret@localhost:5432/towing \
+  python -m app.seed
+```
+
+To re-seed from scratch after schema changes:
+
+```bash
+# reset the schema (WARNING: drops all data)
+docker compose exec db psql -U postgres -d towing -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO postgres; GRANT ALL ON SCHEMA public TO public;"
+docker compose exec api sh -c "cd /app && python -m alembic upgrade head && python -m app.seed"
+```
+
+## Test-case walkthrough (5 minutes)
+
+These steps exercise the full flow using the seeded data. Open
+http://localhost:3001 in a browser.
+
+### 1. Admin logs in
+
+1. Go to **Sign in**, use `admin@towassist.com` / `Admin123!`.
+2. Confirm the dashboard loads and `/api/users/me` returns
+   `"is_superuser": true`.
+
+### 2. Commuter requests service (Alice)
+
+1. Log out, sign in as `alice@towassist.com` / `Commuter123!`.
+2. Dashboard should show the seeded **pending tow** (id 1) under **Active
+   Requests** and the **completed recovery** under **History**.
+3. Open **Request service**, pick _Service: Emergency Towing / Vehicle: Car_,
+   describe the issue, click **Share current location** (or type any location),
+   and submit.
+4. The backend matches the **nearest available driver** — in the seeded data
+   that is **mercy** (~1.7 km). A green *Driver Dispatched* card shows her
+   email, distance, ETA and an estimated price.
+5. Check the same assignment from **View Details** on the request.
+
+### 3. Driver accepts the job (Mercy)
+
+1. Log out, sign in as `mercy@towassist.com` / `Driver123!`.
+2. Wait — since request 1 was an *existing* pending request, dispatch was
+   triggered at creation. In live use the **Driver Console** shows you online
+   and lists nearby ranked drivers when you go online.
+3. Confirm via the API that the dispatch is assigned to you and accept it:
+
+```bash
+# get the dispatch id for request 1 (as Alice)
+curl -s http://localhost:8000/api/dispatch/request/1 \
+  -H "Authorization: Bearer <alice_token>"
+# accept it as Mercy
+curl -s -X POST http://localhost:8000/api/dispatch/<id>/respond \
+  -H "Authorization: Bearer <mercy_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"accepted"}'
+```
+
+### 4. Driver Console + vehicles
+
+1. As **dan** (`dan@towassist.com` / `Driver123!`), open **Driver Console**.
+   He is seeded online + available; you can go offline/back to test the
+   availability heartbeat (`PUT /api/drivers/me`).
+2. **Manage Vehicles** shows dan's Isuzu tow truck.
+
+### 4b. Driver status semantics (phone location = dispatch location)
+
+A driver's position is used for dispatch matching **only while they are
+active**, and the active state is driven by a phone location heartbeat:
+
+- **Active** = the driver is online *and* `available` *and* has a position. The
+  backend stores the driver's phone GPS (`current_lat`/`current_lng`) and matches
+  the nearest available driver against the request's coordinates.
+- **Offline / busy** = the driver is offline (`off_duty`) **or** is handling a
+  request (`assigned`/`enroute`). A busy driver is **not** re-matched and does
+  not receive new jobs until they finish.
+
+Concretely, the backend only ever considers drivers with
+`is_online = true AND current_status = 'available' AND current_lat/lng` set
+(`backend/app/services/dispatch.py::list_available_drivers`). Going offline or
+accepting a job flips the driver out of that pool automatically — no stale
+position is reused for dispatch.
+
+The **mobile Driver Console** (`mobile/lib/screens/driver_console_screen.dart` +
+`mobile/lib/providers/driver_provider.dart`) exposes this: tap **Go Active** to
+share your (simulated) phone location, **Refresh Location** to update the
+heartbeat while staying available, and **Go Offline** to leave the dispatch
+pool. While busy it shows *"Busy — handling a request"* instead of available.
+
+The **web Driver Console** (`web/src/app/dashboard/driver/page.tsx`) does the
+same with browser geolocation: **Go Online** captures your position and shows
+the ranked nearby driver pool.
+
+### 5. (Optional) Read the seed's pre-made dispatch
+
+As **bob** (`bob@towassist.com` / `Commuter123!`), his `enroute` request is
+already matched to dan (`accepted`, priced at 1250.00) — the "View Details"
+screen renders the live driver + ETA + price without any extra steps.
+
+### Reset the demo state
+
+Request 1 is seeded as `pending`. After you dispatch and accept it, restore it
+so the walkthrough is repeatable:
+
+```bash
+docker exec towingandemergencyservicesapp-db-1 psql -U postgres -d towing -c \
+  "DELETE FROM dispatches WHERE request_id=1;
+   UPDATE service_requests SET status='pending' WHERE id=1;
+   UPDATE drivers SET current_status='available' WHERE user_id IN (2,3);"
+```
+
+## Local (non-Docker) development
+
+```bash
+# Backend
+cd backend
+uv venv && source .venv/bin/activate && uv pip install -r requirements.txt
+export DATABASE_URL=postgresql+asyncpg://postgres:secret@localhost:5432/towing
+alembic upgrade head
+uvicorn app.main:app --reload --port 8000
+
+# Web
+cd web
+npm ci            # add --legacy-peer-deps if peer conflicts
+npm run dev       # http://localhost:3000
+```
+
+## Environment variables
+
+### Backend
+```env
+DATABASE_URL=postgresql+asyncpg://postgres:secret@localhost:5432/towing
+JWT_SECRET_KEY=super-secret-key        # NOTE: read as JWT_SECRET_KEY, not SECRET_KEY
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+```
+
+> The env name is `JWT_SECRET_KEY` (see `backend/app/core/settings.py`).
+> Setting `SECRET_KEY` / `ALGORITHM` has no effect — a legacy README/CI trap.
+
+### Web
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+## Testing
+
+```bash
+# Backend (needs PYTHONPATH=. so `app` is importable)
+cd backend && PYTHONPATH=. pytest -v --tb=short
+
+# Web (from web/)
+npm run lint && npx tsc --noEmit && npm test && npm run build
+
+# Mobile (from mobile/)
+flutter analyze && flutter test
+```
+
+## API surface (high level)
+
+| Method | Route                                    | Auth | Purpose                          |
+|--------|------------------------------------------|------|----------------------------------|
+| POST   | `/api/auth/register`                     | —    | Sign up                          |
+| POST   | `/api/auth/jwt/login`                    | —    | Login (form-encoded) → JWT       |
+| GET    | `/api/users/me`                          | ✔    | Current user                     |
+| POST   | `/api/service-requests`                  | ✔    | Create a service request         |
+| GET    | `/api/service-requests`                  | ✔    | List own requests                |
+| PUT    | `/api/drivers/me`                        | ✔    | Availability + position upsert   |
+| GET    | `/api/drivers/me`                        | ✔    | Own driver profile               |
+| GET    | `/api/dispatch/available?lat=&lng=`      | ✔    | Nearest available drivers (preview) |
+| POST   | `/api/dispatch`                          | ✔    | Match nearest driver to a request |
+| POST   | `/api/dispatch/{id}/respond`             | ✔    | Driver accepts/declines          |
+| GET    | `/api/dispatch/request/{id}`             | ✔    | Requester view of assignment     |
+| CRUD   | `/api/vehicles`, `/api/emergency-logs`   | ✔    | Vehicles, emergency logs         |
+| GET    | `/health`, `/api/db-ping`, `/api/ping`   | —    | Health checks                    |
+
+## License
+
+MIT — see the LICENSE file for details.

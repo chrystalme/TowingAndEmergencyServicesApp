@@ -1,38 +1,17 @@
-# Build stage
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies with optimizations
-RUN npm install --legacy-peer-deps --prefer-offline --no-audit --no-fund
-
-# Copy source code
-COPY . .
-
-# Create public directory if it doesn't exist (Next.js doesn't create it by default)
-RUN mkdir -p public
-
-# Build the application
-RUN npm run build
-
-# Runtime stage
-FROM node:20-alpine AS runner
+# Runtime stage only (use pre-built dependencies and .next)
+FROM node:20-alpine
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 
 # Create non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 
-# Copy built application
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Copy pre-built next and node_modules directly with minimal context
+COPY --chown=nextjs:nodejs .next/standalone ./
+COPY --chown=nextjs:nodejs .next/static ./.next/static
 
 USER nextjs
 

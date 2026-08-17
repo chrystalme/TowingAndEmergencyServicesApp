@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Truck, Settings, LogOut, History, MapPin, Clock, CheckCircle, AlertCircle, Loader2, User } from 'lucide-react';
+import { Truck, Settings, LogOut, History, MapPin, Clock, CheckCircle, AlertCircle, Loader2, User, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ServiceRequest {
@@ -13,6 +13,10 @@ interface ServiceRequest {
   status: string;
   created_at: string;
   updated_at: string;
+  requester_email?: string | null;
+  driver_email?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface UserData {
@@ -26,6 +30,7 @@ export default function DashboardPage() {
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [user, setUser] = useState<UserData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
 
   useEffect(() => {
@@ -70,6 +75,24 @@ export default function DashboardPage() {
   const handleLogout = () => {
     localStorage.removeItem('access_token');
     router.push('/');
+  };
+
+  const refreshRequests = async () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+    setRefreshing(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/service-requests`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to refresh');
+      setRequests(await res.json());
+      toast.success('Requests refreshed');
+    } catch {
+      toast.error('Failed to refresh requests');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -147,6 +170,14 @@ export default function DashboardPage() {
                 {user?.email}
               </span>
               <button
+                onClick={refreshRequests}
+                disabled={refreshing}
+                className="p-2 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-50"
+                title="Refresh requests"
+              >
+                <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+              </button>
+              <button
                 onClick={handleLogout}
                 className="p-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
                 title="Logout"
@@ -198,6 +229,9 @@ export default function DashboardPage() {
                     Service
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Requester
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Location
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -214,10 +248,17 @@ export default function DashboardPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredRequests.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
-                      {activeTab === 'active'
-                        ? 'No active requests. <Link href="/request" className="text-primary-600 hover:underline">Request service</Link>'
-                        : 'No completed requests yet.'}
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                      {activeTab === 'active' ? (
+                        <>
+                          No active requests.{' '}
+                          <Link href="/request" className="text-primary-600 hover:underline">
+                            Request service
+                          </Link>
+                        </>
+                      ) : (
+                        'No completed requests yet.'
+                      )}
                     </td>
                   </tr>
                 ) : (
@@ -230,6 +271,14 @@ export default function DashboardPage() {
                             <p className="text-sm font-medium text-gray-900">{request.description.substring(0, 50)}...</p>
                             <p className="text-sm text-gray-500">{request.location.substring(0, 40)}...</p>
                           </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center">
+                          <User className="w-4 h-4 text-gray-400 mr-2" />
+                          <span className="text-sm text-gray-600 max-w-xs truncate">
+                            {request.requester_email ?? `User #${request.id}`}
+                          </span>
                         </div>
                       </td>
                       <td className="px-6 py-4">

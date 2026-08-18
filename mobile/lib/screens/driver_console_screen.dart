@@ -66,7 +66,7 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
         title: const Text('Driver Console'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/dashboard'),
+          onPressed: () => context.pop(),
         ),
       ),
       body: Consumer<DriverProvider>(

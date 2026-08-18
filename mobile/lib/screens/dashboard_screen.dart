@@ -114,14 +114,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
               // Request Service button
               PrimaryButton(
                 text: 'Request Service',
-                onPressed: () => context.go('/request'),
+                onPressed: () => context.push('/request'),
               ),
               const SizedBox(height: 12),
               // Driver Console button — go active as a driver or go offline
               SecondaryButton(
                 text: 'Driver Console',
                 icon: Icons.local_shipping,
-                onPressed: () => context.go('/driver'),
+                onPressed: () => context.push('/driver'),
               ),
               const SizedBox(height: 24),
 
@@ -137,7 +137,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                   TextButton(
-                    onPressed: () => context.go('/requests'),
+                    onPressed: () => context.push('/requests'),
                     child: const Text('View All'),
                   ),
                 ],
@@ -200,10 +200,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go('/request'),
+        onPressed: () => context.push('/request'),
         icon: const Icon(Icons.add),
         label: const Text('Request'),
         backgroundColor: const Color(0xFF1D4ED8),
+        foregroundColor: Colors.white,
       ),
     );
   }

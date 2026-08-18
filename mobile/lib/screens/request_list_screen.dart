@@ -79,7 +79,7 @@ class _RequestListScreenState extends State<RequestListScreen> {
                     ),
                     const SizedBox(height: 24),
                     ElevatedButton.icon(
-                      onPressed: () => context.go('/request'),
+                      onPressed: () => context.push('/request'),
                       icon: const Icon(Icons.add),
                       label: const Text('Request Service'),
                     ),
@@ -104,10 +104,11 @@ class _RequestListScreenState extends State<RequestListScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go('/request'),
+        onPressed: () => context.push('/request'),
         icon: const Icon(Icons.add),
         label: const Text('New Request'),
         backgroundColor: const Color(0xFF1D4ED8),
+        foregroundColor: Colors.white,
       ),
     );
   }

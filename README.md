@@ -203,6 +203,44 @@ npm ci            # add --legacy-peer-deps if peer conflicts
 npm run dev       # http://localhost:3000
 ```
 
+### Mobile (iOS simulator)
+
+The app only needs the backend reachable at `http://localhost:8000/api` — the
+iOS Simulator shares the host's network, so `localhost` resolves to your Mac.
+Start the backend first (non-Docker command above, or `docker compose up -d --build`
+and use port 8000 from the `api` service).
+
+Requirements: Flutter 3.x, Xcode (with a downloaded simulator runtime), and
+CocoaPods (`sudo gem install cocoapods` if missing).
+
+```bash
+# 1. Check Flutter sees the toolchain
+cd mobile
+flutter doctor            # Xcode + iOS section should be green
+
+# 2. Start a simulator
+open -a Simulator         # boots the default device
+# or pick a specific one:
+xcrun simctl list devices available
+xcrun simctl boot "iPhone 16 Pro" && open -a Simulator
+
+# 3. Fetch deps and run (picks the booted simulator)
+flutter pub get
+flutter run               # or: flutter run -d <device-id>
+```
+
+Notes:
+
+- First launch compiles the iOS app and runs `pod install` automatically —
+  it takes a few minutes; subsequent runs are fast.
+- With the app running, use `r` to hot-reload, `R` to hot-restart, `q` to quit.
+- The driver GPS heartbeat is simulated in the Driver Console (tap
+  **Go Active**), so no location permissions are needed in the simulator.
+- Android emulators do **not** share the host network — `localhost` there
+  refers to the emulator itself, so the hardcoded
+  `http://localhost:8000/api` in `mobile/lib/services/api_service.dart` only
+  works on iOS / macOS / desktop targets.
+
 ## Environment variables
 
 ### Backend

@@ -352,11 +352,42 @@ does not bill egress.
   asyncpg rejects on the first query. `settings.py` normalizes both, so the
   platform's `DATABASE_URL` can be referenced verbatim.
 - *Port.* The image binds `$PORT` (falling back to 8000 locally).
-- *Migrations.* `railway.json` sets a pre-deploy command of
+- *Migrations.* `railway.json` declares a pre-deploy command of
   `python -m alembic upgrade head`, so migrations are a discrete step that must
   succeed before the new release goes live — never a race between replicas.
+  **But see the warning below: that file is not applied for CLI deploys.**
 - *Demo data.* `app/seed.py` cannot run: `ALLOW_DEMO_SEED` is set only in
   `docker-compose.yml`, so the deployed image has no path to it.
+
+**railway.json is not enough on its own**
+
+`railway.json` is *not* applied when you deploy with `railway up`. A service
+deployed that way starts healthy against an unmigrated database, and every
+endpoint returns 500 until something runs alembic — the health check passes
+because `/health` never touches the database. This was confirmed on a real
+deploy, not inferred.
+
+The Infrastructure-as-Code format cannot express it either: `railway config
+migrate` emits `preDeployCommand` as an inert comment, and `railway config
+pull` does not return it even while it is set and running. So the setting
+lives on the Railway service, which no new service or environment inherits.
+
+Apply it from the repo instead of clicking, after linking a project:
+
+```bash
+cd backend
+python scripts/railway_apply_config.py --service api   # --dry-run to preview
+railway up -s api                                      # redeploy to take effect
+```
+
+Re-running is safe. Verify it actually took by registering a user — a 500
+means the schema is still missing:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$API/api/auth/register" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"probe@example.com","password":"probepassword123"}'
+```
 
 **First administrator**
 

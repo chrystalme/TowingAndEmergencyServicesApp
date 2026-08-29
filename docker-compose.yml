@@ -9,16 +9,37 @@ services:
       - pg_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    # The api container migrates on boot, so it must not start until Postgres
+    # is actually accepting connections (not merely "started").
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d towing"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   api:
     build: ./backend
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:secret@db/towing
       JWT_SECRET_KEY: super-secret-key
+      # Unlocks app/seed.py. Deliberately set HERE and not in the image, so the
+      # published image cannot seed demo data in any environment that doesn't
+      # opt in via this dev-only compose file.
+      ALLOW_DEMO_SEED: "yes"
+    # Migrations + demo seed run as a compose-level override. The image's own
+    # CMD stays a plain `uvicorn`, so production runs the same image without
+    # ever touching alembic or the seed. Nothing to remember to switch off.
+    # Migrations hard-fail (the app cannot serve without a schema); the demo
+    # seed is advisory, so a guard refusal logs and the API still starts.
+    command: >
+      sh -c "python -m alembic upgrade head &&
+      { python -m app.seed || echo '[seed] skipped - see message above'; } &&
+      uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
   web:

@@ -5,11 +5,27 @@ Run (from ``backend/``) against a Postgres that already has the schema (after
 call ``Base.metadata.create_all`` if no tables exist yet::
 
     source .venv/bin/activate
+    ALLOW_DEMO_SEED=yes \
     DATABASE_URL=postgresql+asyncpg://postgres:secret@localhost:5432/towing \
         python -m app.seed
 
-The script is idempotent: existing emails (users) are skipped, and new rows are
-added only if the target table is empty. Passwords are hashed with the exact
+DEVELOPMENT ONLY. This creates a superuser whose password is published in the
+README, so it is protected by two independent guards and refuses to run unless
+BOTH pass:
+
+1. ALLOW_DEMO_SEED must be set to yes/true/1. The safe default is off, so any
+   environment that simply never sets it is protected without any action.
+2. The users table must hold no account outside DEMO_EMAILS. A single real
+   user aborts the run, so this is freely re-runnable against a dev database
+   but can never fire against a populated one.
+
+To create a real superuser in production use app/create_admin.py instead.
+
+Within a demo-only database this is re-runnable: the five demo users are reused
+when already present, and other tables are populated only when empty. The
+example command below therefore needs ALLOW_DEMO_SEED=yes in its environment.
+
+Passwords are hashed with the exact
 same Argon2 ``PasswordHelper`` that fastapi-users uses for ``/api/auth/jwt/login``,
 so every demo login below works against the running API.
 
@@ -23,6 +39,7 @@ Demo accounts (email / password / role):
 """
 
 import asyncio
+import os
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -46,12 +63,52 @@ def _hash(password: str) -> str:
     return PH.hash(password)
 
 
+# Every account this script is allowed to own. The guard below refuses to touch
+# a database containing any user outside this set, so the seed can be re-run
+# freely against a dev database but can never fire against a real one.
+DEMO_EMAILS = {
+    "admin@towassist.com",
+    "dan@towassist.com",
+    "mercy@towassist.com",
+    "alice@towassist.com",
+    "bob@towassist.com",
+}
+
+# Opt-in flag. Absent/false means "do not seed" — the safe default, so an
+# environment that simply never sets it is protected without any action.
+_SEED_FLAG = "ALLOW_DEMO_SEED"
+
+
+def _require_opt_in() -> None:
+    """Refuse to run unless the environment explicitly opted in."""
+    if os.getenv(_SEED_FLAG, "").strip().lower() not in ("yes", "true", "1"):
+        raise SystemExit(
+            f"refusing to seed: {_SEED_FLAG} is not set. "
+            "This script creates demo accounts including a superuser with a "
+            "well-known password. Set ALLOW_DEMO_SEED=yes to confirm this is a "
+            "throwaway development database."
+        )
+
+
+def _require_demo_only_database(existing_emails: set[str]) -> None:
+    """Refuse to run if the database holds any user this script doesn't own."""
+    foreign = existing_emails - DEMO_EMAILS
+    if foreign:
+        sample = ", ".join(sorted(foreign)[:3])
+        raise SystemExit(
+            f"refusing to seed: database contains {len(foreign)} non-demo "
+            f"user(s) (e.g. {sample}). This looks like a real database; "
+            "seeding it would create a superuser with a published password."
+        )
+
+
 async def _ensure_tables() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 
 async def seed() -> None:
+    _require_opt_in()
     await _ensure_tables()
 
     async with AsyncSessionLocal() as session:
@@ -108,6 +165,8 @@ async def seed() -> None:
         result = await session.execute(select(User.email))
         for (email,) in result.all():
             existing.add(email)
+
+        _require_demo_only_database(existing)
 
         created_users = {}
         for email, u in users.items():

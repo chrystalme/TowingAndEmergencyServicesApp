@@ -288,6 +288,7 @@ DATABASE_URL=postgresql+asyncpg://postgres:secret@localhost:5432/towing
 JWT_SECRET_KEY=super-secret-key        # NOTE: read as JWT_SECRET_KEY, not SECRET_KEY
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 ENVIRONMENT=development                # anything else = deployed, see below
+CORS_ORIGINS=*                         # comma-separated origins; "*" is dev-only
 ```
 
 > The env name is `JWT_SECRET_KEY` (see `backend/app/core/settings.py`).
@@ -320,6 +321,54 @@ Changing it invalidates every issued token, so all users must log in again.
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
+
+## Deploying the API + database (Railway)
+
+The backend is deploy-ready; the web app is not (see the Quick start note).
+
+**What to create in Railway**
+
+1. A new project, then **+ New > Database > Add PostgreSQL**.
+2. **+ New > GitHub Repo**, pointed at this repository.
+3. On that service: **Settings > Root Directory = `backend`**. Railway then
+   reads `backend/railway.json` and builds `backend/Dockerfile`.
+
+**Variables to set on the API service**
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | reference the Postgres service, e.g. `${{Postgres.DATABASE_URL}}` |
+| `JWT_SECRET_KEY` | a private random value (see above) — **required**, the app refuses to boot without it |
+| `CORS_ORIGINS` | your web origin, e.g. `https://app.example.com` |
+| `ENVIRONMENT` | `production` (optional — Railway's own `RAILWAY_ENVIRONMENT` already trips the guard) |
+
+Prefer Railway's **private** Postgres URL where offered: it is faster and
+does not bill egress.
+
+**What is already handled**
+
+- *Driver mismatch.* Railway hands out `postgresql://...`, which SQLAlchemy's
+  async engine rejects outright, and often appends `?sslmode=require`, which
+  asyncpg rejects on the first query. `settings.py` normalizes both, so the
+  platform's `DATABASE_URL` can be referenced verbatim.
+- *Port.* The image binds `$PORT` (falling back to 8000 locally).
+- *Migrations.* `railway.json` sets a pre-deploy command of
+  `python -m alembic upgrade head`, so migrations are a discrete step that must
+  succeed before the new release goes live — never a race between replicas.
+- *Demo data.* `app/seed.py` cannot run: `ALLOW_DEMO_SEED` is set only in
+  `docker-compose.yml`, so the deployed image has no path to it.
+
+**First administrator**
+
+```bash
+railway run -s <api-service> \
+  -e ADMIN_EMAIL=ops@example.com -e ADMIN_PASSWORD='...' \
+  python -m app.create_admin
+```
+
+If `railway.json` and the dashboard ever disagree, the dashboard wins — the
+same three settings (pre-deploy command, health check path, start command)
+can be set under **Settings > Deploy**.
 
 ## Testing
 

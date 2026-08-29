@@ -1,5 +1,16 @@
 """WebSocket position stream for drivers.
 
+!! NOT MOUNTED — see app/api/router.py !!
+
+This endpoint takes ``user_id`` straight from the URL path and writes that
+driver's coordinates and online flag with NO authentication, so any caller
+could reposition any driver or remove them from the dispatch pool. It was
+unmounted rather than deleted so the intended design survives.
+
+Before re-enabling it, authenticate the socket (accept a JWT as a query
+parameter or first frame, resolve the user from it, and ignore the path
+``user_id`` entirely) and stop echoing raw exception strings to the client.
+
 Accepted client messages (JSON):
     {"lat": 37.7, "lng": -122.4, "is_online": true, "current_status": "available"}
 

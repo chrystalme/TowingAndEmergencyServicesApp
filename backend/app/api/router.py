@@ -13,7 +13,12 @@ from .vehicles import router as vehicles_router
 from .emergency_logs import router as emergency_logs_router
 from .drivers import router as drivers_router
 from .dispatch import router as dispatch_router
-from .ws import router as ws_router
+
+# NOTE: `.ws` is intentionally NOT imported/mounted. The driver position stream
+# accepted a user_id straight from the URL path with no authentication, so any
+# caller could move any driver or pull them out of the dispatch pool. No client
+# uses it (web and mobile both post position via PUT /api/drivers/me), so it is
+# pure attack surface. See app/api/ws.py before re-enabling it.
 
 router = APIRouter()
 
@@ -35,7 +40,6 @@ router.include_router(emergency_logs_router)
 # Dispatch / routing routes
 router.include_router(drivers_router)
 router.include_router(dispatch_router)
-router.include_router(ws_router)
 
 # Debug endpoint
 @router.get("/ping", tags=["debug"])

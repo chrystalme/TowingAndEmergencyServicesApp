@@ -3,7 +3,15 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:8000/api';
+  // Configurable at build/run time so one codebase serves every target:
+  //   iOS simulator / desktop : the default below (shares the host network)
+  //   Android emulator        : --dart-define=API_BASE_URL=http://10.0.2.2:8000/api
+  //   physical device         : --dart-define=API_BASE_URL=http://<lan-ip>:8000/api
+  //   deployed                : --dart-define=API_BASE_URL=https://api.example.com/api
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://localhost:8000/api',
+  );
   static const String _tokenKey = 'access_token';
   
   final FlutterSecureStorage _storage = const FlutterSecureStorage();

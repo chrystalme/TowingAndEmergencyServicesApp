@@ -23,17 +23,24 @@ a tow/roadside help, the backend matches the nearest available driver
 ## Quick start (Docker)
 
 ```bash
-docker compose up -d --build
+docker compose up -d --build db api
 ```
+
+The `api` container runs `alembic upgrade head` and then the demo seed before
+starting uvicorn, so a fresh database is migrated and populated for you.
+Migrations hard-fail (the app cannot serve without a schema); the seed is
+advisory and merely logs if its guards refuse (see below).
+
+> **The `web` service does not build.** Its Dockerfile has no build stage and
+> `.dockerignore` excludes `src/`, so start the frontend locally instead:
+> `cd web && npm install && npm run dev` (http://localhost:3000). Use
+> `npm install`, not `npm ci` — the committed lockfile is stale.
 
 | Service | URL        | Notes                        |
 |---------|------------|------------------------------|
-| Web     | http://localhost:3001 | Next.js frontend           |
+| Web     | http://localhost:3000 | Next.js frontend — run locally, see above |
 | API     | http://localhost:8000 | FastAPI (docs at `/docs`) |
 | DB      | localhost:5432         | Postgres 16, db `towing`  |
-
-> The web container forwards `3001 → 3000` (the app runs on port 3000 inside the
-> container). Use `http://localhost:3001`.
 
 ## Demo accounts (seeded)
 
@@ -65,8 +72,20 @@ requests, so dispatch always has a candidate to match.
 
 ## Running the seed yourself
 
-The seed lives at `backend/app/seed.py` (idempotent — safe to run repeatedly;
-existing entities are reused and tables are only populated when empty).
+The seed lives at `backend/app/seed.py`. It is **development only** — it creates
+a superuser whose password is published in this file — and refuses to run
+unless **both** guards pass:
+
+1. `ALLOW_DEMO_SEED` is set to `yes`/`true`/`1`. The default is off, so any
+   environment that never sets it is protected without any action.
+2. The `users` table contains no account outside the five demo emails. One
+   real user aborts the run — so the seed is freely re-runnable against a dev
+   database but can never fire against a populated one.
+
+`docker-compose.yml` sets `ALLOW_DEMO_SEED=yes` for the `api` service, so this
+is already unlocked locally and nowhere else. Within a demo-only database the
+seed is re-runnable: demo users are reused and other tables fill only when
+empty.
 
 With Docker compose running:
 
@@ -79,9 +98,29 @@ Or against a local venv + Postgres:
 ```bash
 cd backend
 source .venv/bin/activate
+ALLOW_DEMO_SEED=yes \
 DATABASE_URL=postgresql+asyncpg://postgres:secret@localhost:5432/towing \
   python -m app.seed
 ```
+
+### Creating the first administrator (production)
+
+Because the seed cannot reach a real database, bootstrap a real superuser with
+`backend/app/create_admin.py`. It takes credentials from the environment at run
+time (nothing is committed), never creates tables, and never prints the
+password:
+
+```bash
+docker compose run --rm \
+  -e ADMIN_EMAIL=ops@example.com -e ADMIN_PASSWORD='...' \
+  api python -m app.create_admin
+```
+
+It rejects passwords under 12 characters and any password published in this
+repo. It is idempotent: if the email already exists the account is promoted to
+superuser and its **password is left untouched**, so re-running never resets a
+working administrator. That also makes it the way to promote someone who
+already registered through the app normally.
 
 To re-seed from scratch after schema changes:
 
@@ -248,15 +287,88 @@ Notes:
 DATABASE_URL=postgresql+asyncpg://postgres:secret@localhost:5432/towing
 JWT_SECRET_KEY=super-secret-key        # NOTE: read as JWT_SECRET_KEY, not SECRET_KEY
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
+ENVIRONMENT=development                # anything else = deployed, see below
+CORS_ORIGINS=*                         # comma-separated origins; "*" is dev-only
 ```
 
 > The env name is `JWT_SECRET_KEY` (see `backend/app/core/settings.py`).
 > Setting `SECRET_KEY` / `ALGORITHM` has no effect — a legacy README/CI trap.
 
+#### JWT_SECRET_KEY outside local development
+
+`super-secret-key` is the **public** default: it lives in this README, in
+`docker-compose.yml`, and in git history. Anyone who has read the repo can use
+it to forge a token for any user, including the administrator. It is fine for a
+throwaway local database and nowhere else.
+
+The app therefore refuses to start with that default whenever it looks
+deployed — that is, when `ENVIRONMENT` is set to anything outside
+`development`/`dev`/`local`/`test`/`testing`, **or** when `RAILWAY_ENVIRONMENT`
+is present (Railway injects it into every service, so a deploy trips the guard
+even if nobody set `ENVIRONMENT`). Local development needs no configuration:
+the safe state is the one you get by doing nothing.
+
+Generate a real secret and set it as a platform variable — never commit it:
+
+```bash
+python -c 'import secrets; print(secrets.token_urlsafe(64))'
+```
+
+Changing it invalidates every issued token, so all users must log in again.
+
 ### Web
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
+
+
+## Deploying the API + database (Railway)
+
+The backend is deploy-ready; the web app is not (see the Quick start note).
+
+**What to create in Railway**
+
+1. A new project, then **+ New > Database > Add PostgreSQL**.
+2. **+ New > GitHub Repo**, pointed at this repository.
+3. On that service: **Settings > Root Directory = `backend`**. Railway then
+   reads `backend/railway.json` and builds `backend/Dockerfile`.
+
+**Variables to set on the API service**
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | reference the Postgres service, e.g. `${{Postgres.DATABASE_URL}}` |
+| `JWT_SECRET_KEY` | a private random value (see above) — **required**, the app refuses to boot without it |
+| `CORS_ORIGINS` | your web origin, e.g. `https://app.example.com` |
+| `ENVIRONMENT` | `production` (optional — Railway's own `RAILWAY_ENVIRONMENT` already trips the guard) |
+
+Prefer Railway's **private** Postgres URL where offered: it is faster and
+does not bill egress.
+
+**What is already handled**
+
+- *Driver mismatch.* Railway hands out `postgresql://...`, which SQLAlchemy's
+  async engine rejects outright, and often appends `?sslmode=require`, which
+  asyncpg rejects on the first query. `settings.py` normalizes both, so the
+  platform's `DATABASE_URL` can be referenced verbatim.
+- *Port.* The image binds `$PORT` (falling back to 8000 locally).
+- *Migrations.* `railway.json` sets a pre-deploy command of
+  `python -m alembic upgrade head`, so migrations are a discrete step that must
+  succeed before the new release goes live — never a race between replicas.
+- *Demo data.* `app/seed.py` cannot run: `ALLOW_DEMO_SEED` is set only in
+  `docker-compose.yml`, so the deployed image has no path to it.
+
+**First administrator**
+
+```bash
+railway run -s <api-service> \
+  -e ADMIN_EMAIL=ops@example.com -e ADMIN_PASSWORD='...' \
+  python -m app.create_admin
+```
+
+If `railway.json` and the dashboard ever disagree, the dashboard wins — the
+same three settings (pre-deploy command, health check path, start command)
+can be set under **Settings > Deploy**.
 
 ## Testing
 

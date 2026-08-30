@@ -206,6 +206,21 @@ class ApiService {
     return (await get('/dispatch/mine?active_only=$activeOnly')) as List<dynamic>;
   }
 
+  /// The signed-in user, including their role.
+  Future<Map<String, dynamic>> getMe() async {
+    return (await get('/users/me')) as Map<String, dynamic>;
+  }
+
+  /// Move an accepted job along: enroute, arrived, completed, cancelled.
+  Future<dynamic> advanceDispatch(int dispatchId, String status) async {
+    return post('/dispatch/$dispatchId/status', {'status': status});
+  }
+
+  /// Buy more time before an unanswered offer lapses.
+  Future<dynamic> extendDispatch(int dispatchId) async {
+    return post('/dispatch/$dispatchId/extend', {});
+  }
+
   Future<dynamic> getMyDriverProfile() async {
     return get('/drivers/me');
   }

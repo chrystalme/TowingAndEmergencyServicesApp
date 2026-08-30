@@ -75,6 +75,29 @@ fastapi_users = FastAPIUsers[User, int](
     [auth_backend],
 )
 
+# Roles. A user is a commuter by default; driving is a permissioned role,
+# not something you get by tapping a button.
+ROLE_COMMUTER = "commuter"
+ROLE_DRIVER = "driver"
+ROLE_COMPANY = "company"
+ROLE_ADMIN = "admin"
+ASSIGNABLE_ROLES = (ROLE_COMMUTER, ROLE_DRIVER, ROLE_COMPANY, ROLE_ADMIN)
+
+
+def is_admin(user: User) -> bool:
+    return bool(user.is_superuser) or (user.role or "").lower() == ROLE_ADMIN
+
+
+def may_drive(user: User) -> bool:
+    """Whether this user may enter the dispatch pool.
+
+    Tow van operators are vetted — vehicle, licence, insurance — so driving
+    is granted, never self-assigned. Admins are included so support can
+    reproduce a driver's view.
+    """
+    return is_admin(user) or (user.role or "").lower() in (ROLE_DRIVER, ROLE_COMPANY)
+
+
 # Dependencies for current user
 current_active_user = fastapi_users.current_user(active=True)
 current_superuser = fastapi_users.current_user(active=True, superuser=True)
@@ -85,4 +108,15 @@ register_router = fastapi_users.get_register_router(schemas.BaseUser[int], schem
 # Note: get_reset_password_router and get_verify_router have different signatures in newer versions
 reset_password_router = fastapi_users.get_reset_password_router()
 verify_router = fastapi_users.get_verify_router(schemas.BaseUser[int])
-users_router = fastapi_users.get_users_router(schemas.BaseUser[int], schemas.BaseUserUpdate)
+
+class UserRead(schemas.BaseUser[int]):
+    """BaseUser plus the role, so a client can tell what surfaces to show.
+
+    Without this /api/users/me returns no role at all and the apps have no
+    way to know whether the caller may drive.
+    """
+
+    role: str = ROLE_COMMUTER
+
+
+users_router = fastapi_users.get_users_router(UserRead, schemas.BaseUserUpdate)

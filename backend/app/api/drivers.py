@@ -11,13 +11,30 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..core.auth import current_active_user
+from ..core.auth import current_active_user, may_drive
 from ..core.database import get_async_session
 from ..models import Driver, User
 from ..schemas import DriverRead, DriverUpdate
 from .tracking_ws import publish_driver_position
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
+
+
+def _require_driver(user: User) -> None:
+    """Refuse callers who are not permissioned to drive.
+
+    This endpoint puts someone into the live dispatch pool, so real clients
+    can be routed to them. It previously accepted any authenticated user AND
+    promoted them to the driver role on the way in, which meant a commuter
+    could become a dispatchable tow van by tapping a button. Hiding the
+    button in the app would not have fixed it: anyone with curl was one
+    request away from receiving jobs.
+    """
+    if not may_drive(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Your account is not approved to drive. An administrator grants the driver role.",
+        )
 
 
 async def _upsert_driver(session: AsyncSession, user: User, data: DriverUpdate) -> Driver:
@@ -36,9 +53,8 @@ async def _upsert_driver(session: AsyncSession, user: User, data: DriverUpdate) 
     # Any explicit availability/position update refreshes the timestamp.
     driver.last_position_at = datetime.utcnow()
 
-    # Going online as a driver implies the driver role.
-    if payload.get("is_online") is True:
-        user.role = "driver"
+    # Deliberately does NOT touch user.role. Going online is an action a
+    # driver takes; it is not how someone becomes one.
 
     await session.commit()
     await session.refresh(driver)
@@ -57,6 +73,7 @@ async def get_my_driver_profile(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ) -> Driver:
+    _require_driver(user)
     result = await session.execute(select(Driver).where(Driver.user_id == user.id))
     driver = result.scalar_one_or_none()
     if driver is None:
@@ -70,6 +87,7 @@ async def set_driver_availability(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ) -> Driver:
+    _require_driver(user)
     if data.model_dump(exclude_unset=True) == {}:
         raise HTTPException(status_code=422, detail="Nothing to update")
     return await _upsert_driver(session, user, data)
@@ -82,6 +100,7 @@ async def update_position(
     user: User = Depends(current_active_user),
 ) -> Driver:
     """Lightweight position heartbeat; also sets online/status when provided."""
+    _require_driver(user)
     if data.current_lat is None and data.current_lng is None and not data.is_online and not data.current_status:
         raise HTTPException(status_code=422, detail="Provide at least coordinates or availability")
     return await _upsert_driver(session, user, data)

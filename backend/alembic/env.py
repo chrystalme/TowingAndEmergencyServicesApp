@@ -28,8 +28,20 @@ def make_sync_url(async_url: str) -> str:
 url = get_url()
 sync_url = make_sync_url(url)
 
-# Create a synchronous engine for Alembic migrations
-connectable = create_engine(sync_url, poolclass=pool.NullPool)
+# Create a synchronous engine for Alembic migrations.
+#
+# lock_timeout matters here. A migration's ALTER TABLE needs an exclusive
+# lock, and anything already holding a conflicting lock - a leaked
+# transaction, a long read - makes it WAIT, by default forever. That is not
+# theoretical: one such migration sat blocked for twenty minutes while the
+# deploy showed nothing but 'Starting Container', until the platform gave up
+# and rolled back. Failing after fifteen seconds turns a silent hang into a
+# loud, obvious error naming the problem.
+connectable = create_engine(
+    sync_url,
+    poolclass=pool.NullPool,
+    connect_args={"options": "-c lock_timeout=15000"} if sync_url.startswith("postgres") else {},
+)
 
 # Import models to register them with Base.metadata
 target_metadata = Base.metadata

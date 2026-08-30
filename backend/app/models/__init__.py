@@ -63,7 +63,15 @@ class ServiceRequest(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User", back_populates="service_requests")
-    dispatch = relationship("Dispatch", back_populates="request", uselist=False)
+    # A request can be dispatched more than once: a driver declines, the request
+    # returns to `pending`, and the next candidate is assigned. This was
+    # previously uselist=False, which claimed a one-to-one the database never
+    # enforced. Ordered newest-first so `dispatches[0]` is the current attempt.
+    dispatches = relationship(
+        "Dispatch",
+        back_populates="request",
+        order_by="desc(Dispatch.id)",
+    )
 
 
 # ---------- Vehicle model ----------
@@ -132,5 +140,5 @@ class Dispatch(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    request = relationship("ServiceRequest", back_populates="dispatch", foreign_keys=[request_id])
+    request = relationship("ServiceRequest", back_populates="dispatches", foreign_keys=[request_id])
     driver = relationship("User", back_populates="dispatches", foreign_keys=[driver_id])

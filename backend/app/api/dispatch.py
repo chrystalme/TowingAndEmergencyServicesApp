@@ -64,8 +64,13 @@ async def get_request_dispatch(
     if not request or request.user_id != user.id:
         raise HTTPException(status_code=404, detail="Service request not found")
 
+    # Newest first: a declined request gets re-dispatched, so several rows can
+    # share a request_id and the caller wants the current attempt, not whichever
+    # one the database happened to return.
     result = await session.execute(
-        select(Dispatch).where(Dispatch.request_id == request_id)
+        select(Dispatch)
+        .where(Dispatch.request_id == request_id)
+        .order_by(Dispatch.id.desc())
     )
     dispatch = result.scalars().first()
     if dispatch is None:
@@ -90,6 +95,22 @@ async def create_dispatch(
         raise HTTPException(status_code=404, detail="Service request not found")
     if request.status != "pending":
         raise HTTPException(status_code=409, detail=f"Cannot dispatch a request with status '{request.status}'")
+
+    # Belt-and-braces against inconsistent state: if a live assignment already
+    # exists, refuse rather than stacking a second one on the same request.
+    live = (
+        await session.execute(
+            select(Dispatch).where(
+                Dispatch.request_id == request.id,
+                Dispatch.status.in_(("assigned", "accepted", "enroute", "arrived")),
+            )
+        )
+    ).scalars().first()
+    if live is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Request already has a live dispatch (id={live.id}, status='{live.status}')",
+        )
 
     try:
         dispatch, driver_profile, driver_user, candidates = await match_request(session, request)

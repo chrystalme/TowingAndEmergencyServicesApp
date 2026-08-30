@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:towing_emergency/services/api_service.dart';
+import 'package:towing_emergency/services/location_service.dart';
 
 /// Holds the driver's live availability/position state for the console UI.
 ///
@@ -79,6 +80,40 @@ class DriverProvider extends ChangeNotifier {
     }
   }
 
+  /// Move an accepted job along: enroute -> arrived -> completed.
+  ///
+  /// Completing releases the driver back into the available pool, so the
+  /// profile is re-read alongside the job list.
+  Future<bool> advance(int dispatchId, String status) async {
+    _setLoading(true);
+    try {
+      await apiService.advanceDispatch(dispatchId, status);
+      await loadProfile();
+      await loadAssignments();
+      return true;
+    } catch (e) {
+      _setError('Could not move the job to $status: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Buy more time before an unanswered offer lapses.
+  Future<bool> extend(int dispatchId) async {
+    _setLoading(true);
+    try {
+      await apiService.extendDispatch(dispatchId);
+      await loadAssignments();
+      return true;
+    } catch (e) {
+      _setError('Could not extend: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   /// Accept or decline an assigned job.
   ///
   /// Accepting moves the driver to `enroute`; declining returns them to the
@@ -99,21 +134,40 @@ class DriverProvider extends ChangeNotifier {
     }
   }
 
-  /// Capture the phone's location (simulated here, following the request
-  /// screen's convention; swap in a real geolocator in production).
-  void capturePhoneLocation({double? lat, double? lng}) {
-    const defaultLat = 37.7749;
-    const defaultLng = -122.4194;
-    _latitude = lat ?? defaultLat;
-    _longitude = lng ?? defaultLng;
-    notifyListeners();
+  /// Read the device's real position.
+  ///
+  /// Previously returned a hardcoded San Francisco constant, which meant
+  /// every driver published the same point and 'nearest driver' matching
+  /// was meaningless. Failures now surface instead of silently publishing
+  /// a position the driver has never been near.
+  Future<bool> capturePhoneLocation({double? lat, double? lng}) async {
+    if (lat != null && lng != null) {
+      _latitude = lat;
+      _longitude = lng;
+      notifyListeners();
+      return true;
+    }
+    try {
+      final position = await locationService.current();
+      _latitude = position.latitude;
+      _longitude = position.longitude;
+      _error = null;
+      notifyListeners();
+      return true;
+    } on LocationException catch (e) {
+      _setError(e.message);
+      return false;
+    }
   }
 
   /// Go active: online + available, publishing the phone location so the
   /// dispatcher can match against it.
   Future<void> goActive() async {
-    if (!hasPosition) {
-      capturePhoneLocation();
+    // Refuse to go online without a real fix: an 'available' driver with
+    // the wrong coordinates is worse than one who is offline, because
+    // dispatch will confidently send a client to them.
+    if (!await capturePhoneLocation()) {
+      return;
     }
     _setLoading(true);
     try {
@@ -135,6 +189,11 @@ class DriverProvider extends ChangeNotifier {
   /// Refresh the position heartbeat while staying active.
   Future<void> refreshPosition() async {
     if (!_isOnline) return;
+    // Re-read the device first. This used to republish the cached
+    // coordinates, which was invisible while the position was a hardcoded
+    // constant that never changed — but means a driver who has moved
+    // across town would keep advertising where they used to be.
+    if (!await capturePhoneLocation()) return;
     _setLoading(true);
     try {
       final data = await apiService.updateDriverAvailability(

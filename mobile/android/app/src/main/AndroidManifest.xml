@@ -2,6 +2,13 @@
     <!-- Required to reach the API in release builds; the debug and
          profile manifests declare this separately for Flutter tooling. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Dispatch matches on the device's real position; see
+         lib/services/location_service.dart. COARSE is declared alongside
+         FINE because Android 12+ lets the user grant only approximate
+         location, and an approximate fix is still far better than the
+         hardcoded constant this replaced. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="towing_emergency"
         android:name="${applicationName}"

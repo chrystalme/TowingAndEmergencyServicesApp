@@ -45,6 +45,61 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
       ));
   }
 
+  Future<void> _advance(int dispatchId, String status) async {
+    final provider = context.read<DriverProvider>();
+    final ok = await provider.advance(dispatchId, status);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Text(ok ? 'Job marked $status' : provider.error ?? 'Could not update'),
+        backgroundColor: ok ? Colors.green : Colors.red,
+      ));
+  }
+
+  Future<void> _extend(int dispatchId) async {
+    final provider = context.read<DriverProvider>();
+    final ok = await provider.extend(dispatchId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Text(ok ? 'More time added' : provider.error ?? 'Could not extend'),
+        backgroundColor: ok ? Colors.blue : Colors.orange,
+      ));
+  }
+
+  /// The next step a driver can take on an accepted job.
+  ///
+  /// Nothing could previously write past 'accepted' from the phone, so a
+  /// driver accepted a job and then had no way to finish it — and stayed
+  /// unmatchable for good, since only completing releases them.
+  static String? _nextStep(String status) {
+    switch (status) {
+      case 'accepted':
+        return 'enroute';
+      case 'enroute':
+        return 'arrived';
+      case 'arrived':
+        return 'completed';
+      default:
+        return null;
+    }
+  }
+
+  static String _stepLabel(String next) {
+    switch (next) {
+      case 'enroute':
+        return 'Start driving';
+      case 'arrived':
+        return 'I have arrived';
+      case 'completed':
+        return 'Complete job';
+      default:
+        return next;
+    }
+  }
+
   /// A job card with the detail a driver needs to decide, plus the actions.
   /// Only `assigned` jobs are actionable; accepted ones stay visible so the
   /// driver can see what they are currently on.
@@ -134,6 +189,30 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
                     ),
                   ),
                 ],
+              ),
+              // Offers lapse on a timer; this buys the driver more time
+              // rather than losing the job while they are deciding.
+              TextButton.icon(
+                onPressed: () => _extend(job['id'] as int),
+                icon: const Icon(Icons.more_time, size: 18),
+                label: Text(
+                  'Need more time'
+                  '${(job['extension_count'] ?? 0) > 0 ? ' (extended ${job['extension_count']}x)' : ''}',
+                ),
+              ),
+            ] else if (_nextStep((job['status'] ?? '').toString()) != null) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => _advance(
+                    job['id'] as int,
+                    _nextStep((job['status'] ?? '').toString())!,
+                  ),
+                  child: Text(
+                    _stepLabel(_nextStep((job['status'] ?? '').toString())!),
+                  ),
+                ),
               ),
             ],
           ],
@@ -362,8 +441,8 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'This build captures a simulated phone location. '
-                            'A real geolocator package replaces it in production.',
+                            'Your device location is published while you are '
+                            'active, and is what dispatch matches against.',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.blue.shade800,

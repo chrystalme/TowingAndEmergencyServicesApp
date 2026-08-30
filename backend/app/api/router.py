@@ -14,6 +14,7 @@ from .emergency_logs import router as emergency_logs_router
 from .drivers import router as drivers_router
 from .dispatch import router as dispatch_router
 from .admin_settings import router as admin_settings_router
+from .admin_users import router as admin_users_router
 
 # NOTE: `.ws` is intentionally NOT imported/mounted. The driver position stream
 # accepted a user_id straight from the URL path with no authentication, so any
@@ -44,6 +45,7 @@ router.include_router(dispatch_router)
 
 # Runtime settings (superuser only) - change dispatch behaviour without a deploy.
 router.include_router(admin_settings_router)
+router.include_router(admin_users_router)
 
 # Debug endpoint
 @router.get("/ping", tags=["debug"])

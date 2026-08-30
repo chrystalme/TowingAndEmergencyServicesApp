@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..core.auth import current_active_user
+from ..core.auth import ASSIGNABLE_ROLES, current_active_user, is_admin
 from ..core.database import get_async_session
 from ..models import User
 from ..services.runtime_settings import KNOBS, describe_all, get_int, set_int
@@ -38,7 +38,7 @@ class SettingWrite(BaseModel):
 
 
 def _require_admin(user: User) -> None:
-    if not (user.is_superuser or (user.role or "").lower() == "admin"):
+    if not is_admin(user):
         raise HTTPException(status_code=403, detail="Administrator access required")
 
 
@@ -95,3 +95,4 @@ async def update_setting(
         description=knob.description,
         updated_at=None,
     )
+

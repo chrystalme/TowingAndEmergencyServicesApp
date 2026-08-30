@@ -4,6 +4,13 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- Dispatch matches on the device's real position; see
+	     lib/services/location_service.dart. iOS refuses the permission
+	     request outright without these strings. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Your location is used to dispatch the nearest tow truck to you, and to show drivers where you are.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Your location is used to dispatch the nearest tow truck to you, and to show drivers where you are.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

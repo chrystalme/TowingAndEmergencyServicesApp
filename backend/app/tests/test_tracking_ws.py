@@ -32,6 +32,16 @@ async def _register_and_login(client: AsyncClient, email: str, password: str = "
 
 
 async def _go_online(client: AsyncClient, headers: dict, lat: float, lng: float) -> None:
+    """Approve a driver, then put them online.
+
+    Registration creates a commuter and driving is permissioned, so the
+    approval an administrator would perform has to happen first.
+    """
+    from app.tests.testdb import approve_driver
+
+    me = await client.get('/api/users/me', headers={'Authorization': headers['Authorization']})
+    await approve_driver(me.json()['email'])
+
     resp = await client.put(
         "/api/drivers/me",
         json={"is_online": True, "current_status": "available", "current_lat": lat, "current_lng": lng},

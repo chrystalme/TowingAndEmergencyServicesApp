@@ -6,13 +6,19 @@ and prices the job server-side. The matching query/ranking here is the single
 place to swap in PostGIS KNN or a routing/matrix provider later.
 """
 
+import logging
+from datetime import datetime, timedelta
+
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Dispatch, Driver, ServiceRequest, User
 from ..schemas import DispatchRead, DriverCandidate
 from .geo import eta_minutes, haversine_km
-from .pricing import calculate_price
+from .pricing import CURRENCY, calculate_price
+from .runtime_settings import OFFER_TIMEOUT, get_int
+
+logger = logging.getLogger(__name__)
 
 # How many nearby candidates to consider / report alongside the assignment.
 CANDIDATE_LIMIT = 5
@@ -139,8 +145,11 @@ def dispatch_to_read(
         distance_km=dispatch.distance_km,
         eta_minutes=dispatch.eta_minutes,
         price=float(dispatch.price) if dispatch.price is not None else None,
+        currency=CURRENCY,
         created_at=dispatch.created_at,
         responded_at=dispatch.responded_at,
+        expires_at=dispatch.expires_at,
+        extension_count=dispatch.extension_count or 0,
         driver_name=(driver.email if driver else None),
         driver_email=(driver.email if driver else None),
         driver_lat=(driver_profile.current_lat if driver_profile else None),
@@ -154,6 +163,75 @@ def dispatch_to_read(
     )
 
 
+async def expire_stale_offers(session: AsyncSession) -> list[Dispatch]:
+    """Lapse offers the driver never answered, freeing everyone involved.
+
+    Swept lazily — on matching and on reading a driver's job list — rather
+    than by a background scheduler. That keeps expiry deterministic and
+    testable, needs no extra process, and behaves correctly with several API
+    instances running. The tradeoff is that an offer only lapses once some
+    request touches these paths; in practice a waiting client is polling, so
+    it does.
+
+    Returns the dispatches that were expired, so callers can re-offer them.
+    """
+    now = datetime.utcnow()
+    stale = (
+        await session.execute(
+            select(Dispatch).where(
+                and_(
+                    Dispatch.status == "assigned",
+                    Dispatch.expires_at.is_not(None),
+                    Dispatch.expires_at < now,
+                )
+            )
+        )
+    ).scalars().all()
+
+    if not stale:
+        return []
+
+    for dispatch in stale:
+        request = await session.get(ServiceRequest, dispatch.request_id)
+        driver_profile = (
+            await session.execute(
+                select(Driver).where(Driver.user_id == dispatch.driver_id)
+            )
+        ).scalar_one_or_none()
+        # Treated as a decline: the driver is released, the request returns
+        # to pending, and the row stays as a record of who was tried.
+        apply_dispatch_status(dispatch, request, driver_profile, "declined")
+        dispatch.responded_at = now
+        logger.info(
+            "dispatch %s expired unanswered (driver %s, request %s)",
+            dispatch.id,
+            dispatch.driver_id,
+            dispatch.request_id,
+        )
+
+    await session.commit()
+    return list(stale)
+
+
+async def drivers_already_tried(session: AsyncSession, request_id: int) -> set[int]:
+    """Driver ids that already declined or lapsed on this request.
+
+    Excluding them is what turns the ranked candidate list into a real
+    fallback chain instead of re-offering to the same driver forever.
+    """
+    rows = (
+        await session.execute(
+            select(Dispatch.driver_id).where(
+                and_(
+                    Dispatch.request_id == request_id,
+                    Dispatch.status == "declined",
+                )
+            )
+        )
+    ).scalars().all()
+    return set(rows)
+
+
 async def match_request(session: AsyncSession, request: ServiceRequest):
     """Find the nearest available driver for a request and create a Dispatch.
 
@@ -165,8 +243,19 @@ async def match_request(session: AsyncSession, request: ServiceRequest):
         raise LookupError("Request has no coordinates; cannot dispatch.")
 
     all_drivers = await list_available_drivers(session)
+
+    # Never re-offer to someone who already said no (or let it lapse) on this
+    # exact request — otherwise the 'next candidate' is the same candidate.
+    tried = await drivers_already_tried(session, request.id)
+    if tried:
+        all_drivers = [(d, u) for d, u in all_drivers if u.id not in tried]
+
     if not all_drivers:
-        raise LookupError("No drivers are currently available.")
+        raise LookupError(
+            "No drivers are currently available."
+            if not tried
+            else "No further drivers available; every nearby driver has already been tried."
+        )
 
     ranked = rank_candidates(all_drivers, request.latitude, request.longitude)
     top = ranked[0]
@@ -174,6 +263,7 @@ async def match_request(session: AsyncSession, request: ServiceRequest):
 
     price = calculate_price(request.service_type, request.vehicle_type, top["distance_km"])
 
+    timeout_seconds = await get_int(session, OFFER_TIMEOUT)
     dispatch = Dispatch(
         request_id=request.id,
         driver_id=driver_user.id,
@@ -181,6 +271,7 @@ async def match_request(session: AsyncSession, request: ServiceRequest):
         distance_km=top["distance_km"],
         eta_minutes=top["eta_minutes"],
         price=price,
+        expires_at=datetime.utcnow() + timedelta(seconds=timeout_seconds),
     )
     session.add(dispatch)
     request.status = "assigned"

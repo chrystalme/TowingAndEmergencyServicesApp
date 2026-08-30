@@ -56,6 +56,8 @@ from app.models import (
 )
 from fastapi_users.password import PasswordHelper
 
+from app.services.pricing import calculate_price
+
 PH = PasswordHelper()
 
 
@@ -184,21 +186,24 @@ async def seed() -> None:
         await session.commit()
 
         # ------------------------------------------------------------------ drivers
+        # Lagos, Nigeria. These were Nairobi coordinates, which put every
+        # seeded driver ~3,800 km from a Lagos user and made the demo
+        # dispatch quote nonsense.
         driver_rows = [
             Driver(
                 user_id=created_users["dan@towassist.com"].id,
                 is_online=True,
                 current_status="available",
-                current_lat=-1.2850,
-                current_lng=36.8150,
+                current_lat=6.4550,   # Apapa
+                current_lng=3.3841,
                 last_position_at=datetime.utcnow(),
             ),
             Driver(
                 user_id=created_users["mercy@towassist.com"].id,
                 is_online=True,
                 current_status="available",
-                current_lat=-1.3000,
-                current_lng=36.8300,
+                current_lat=6.6018,   # Ikeja
+                current_lng=3.3515,
                 last_position_at=datetime.utcnow(),
             ),
         ]
@@ -215,21 +220,21 @@ async def seed() -> None:
                     make="Toyota",
                     model="Camry",
                     year=2019,
-                    plate_number="KDA 123A",
+                    plate_number="LSR-482-KJA",
                 ),
                 Vehicle(
                     owner_id=created_users["bob@towassist.com"].id,
                     make="Honda",
                     model="CR-V",
                     year=2021,
-                    plate_number="KCB 456B",
+                    plate_number="AAA-771-LND",
                 ),
                 Vehicle(
                     owner_id=created_users["dan@towassist.com"].id,
                     make="Isuzu",
                     model="NPR Tow Truck",
                     year=2018,
-                    plate_number="KDE 789C",
+                    plate_number="APP-305-XA",
                 ),
             ]
             session.add_all(vehicles)
@@ -246,12 +251,12 @@ async def seed() -> None:
                     service_type="towing",
                     vehicle_type="car",
                     name="Alice Johnson",
-                    phone_number="+254700111222",
-                    description="Car broke down on Mombasa Road, needs a tow to the nearest garage.",
-                    location="Mombasa Road, Nairobi",
+                    phone_number="+2348030001122",
+                    description="Car broke down on Third Mainland Bridge, needs a tow to the nearest garage.",
+                    location="Third Mainland Bridge, Lagos",
                     status="pending",
-                    latitude=-1.3080,
-                    longitude=36.8170,
+                    latitude=6.4980,
+                    longitude=3.3960,
                     created_at=now,
                     updated_at=now,
                 ),
@@ -261,12 +266,12 @@ async def seed() -> None:
                     service_type="roadside",
                     vehicle_type="suv",
                     name="Bob Otieno",
-                    phone_number="+254722333444",
-                    description="Flat tyre on Waiyaki Way, need roadside assistance to change it.",
-                    location="Waiyaki Way, Nairobi",
+                    phone_number="+2348090003344",
+                    description="Flat tyre on the Lekki-Epe Expressway, need roadside assistance to change it.",
+                    location="Lekki-Epe Expressway, Lagos",
                     status="enroute",
-                    latitude=-1.2650,
-                    longitude=36.7900,
+                    latitude=6.4520,
+                    longitude=3.5010,
                     created_at=now - timedelta(minutes=30),
                     updated_at=now,
                 ),
@@ -276,12 +281,12 @@ async def seed() -> None:
                     service_type="recovery",
                     vehicle_type="suv",
                     name="Alice Johnson",
-                    phone_number="+254700111222",
-                    description="Recovered vehicle after a minor accident in Westlands.",
-                    location="Westlands, Nairobi",
+                    phone_number="+2348030001122",
+                    description="Recovered vehicle after a minor accident in Ikoyi.",
+                    location="Ikoyi, Lagos",
                     status="completed",
-                    latitude=-1.2670,
-                    longitude=36.8070,
+                    latitude=6.4550,
+                    longitude=3.4350,
                     created_at=now - timedelta(days=3),
                     updated_at=now - timedelta(days=2),
                 ),
@@ -292,13 +297,18 @@ async def seed() -> None:
 
             # ------------------------------------------------------------------ dispatch
             if await session.scalar(select(Dispatch.id).limit(1)) is None:
+                # Priced with the real function rather than a magic number,
+                # so the demo agrees with what the app would actually quote.
+                seeded_distance_km = 3.2
                 dispatch = Dispatch(
                     request_id=bob_pending.id,
                     driver_id=created_users["dan@towassist.com"].id,
                     status="accepted",
-                    distance_km=3.2,
+                    distance_km=seeded_distance_km,
                     eta_minutes=9.0,
-                    price=1250.00,
+                    price=calculate_price(
+                        "roadside", "suv", seeded_distance_km
+                    ),
                     created_at=now - timedelta(minutes=28),
                     responded_at=now - timedelta(minutes=25),
                 )

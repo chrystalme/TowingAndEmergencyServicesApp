@@ -17,11 +17,25 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    # Pub/sub only for now, so persistence is off deliberately: a restart
+    # loses nothing that matters and keeps the local stack light.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build: ./backend
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:secret@db/towing
       JWT_SECRET_KEY: super-secret-key
+      REDIS_URL: redis://redis:6379/0
       # Unlocks app/seed.py. Deliberately set HERE and not in the image, so the
       # published image cannot seed demo data in any environment that doesn't
       # opt in via this dev-only compose file.
@@ -39,6 +53,8 @@ services:
       - "8000:8000"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 

@@ -130,6 +130,9 @@ class DispatchRead(BaseModel):
     distance_km: Optional[float] = None
     eta_minutes: Optional[float] = None
     price: Optional[float] = None
+    # ISO 4217. Sent so a client never has to hardcode a symbol - the web UI
+    # printed a dollar sign against naira amounts.
+    currency: str = "NGN"
     created_at: datetime
     responded_at: Optional[datetime] = None
     # When an unanswered offer lapses, and how many times the driver extended

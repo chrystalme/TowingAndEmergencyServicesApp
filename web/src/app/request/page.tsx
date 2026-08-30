@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { MapPin, Truck, AlertCircle, Loader2, User, Phone, Navigation } from 'lucide-react';
 import { toast } from 'sonner';
 import apiClient from '@/lib/api';
+import { formatMoney } from '@/lib/utils';
 
 const requestSchema = z.object({
   serviceType: z.enum(['towing', 'roadside', 'recovery'], { required_error: 'Please select a service type' }),
@@ -381,7 +382,7 @@ export default function RequestPage() {
                 </div>
                 <div>
                   <dt className="text-green-700/70">Estimated Price</dt>
-                  <dd className="font-medium text-green-950">${dispatchResult.price}</dd>
+                  <dd className="font-medium text-green-950">{formatMoney(dispatchResult.price, dispatchResult.currency)}</dd>
                 </div>
               </dl>
               <p className="mt-3 text-xs text-green-700/80">

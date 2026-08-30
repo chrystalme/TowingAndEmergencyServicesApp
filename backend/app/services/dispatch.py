@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import Dispatch, Driver, ServiceRequest, User
 from ..schemas import DispatchRead, DriverCandidate
 from .geo import eta_minutes, haversine_km
-from .pricing import calculate_price
+from .pricing import CURRENCY, calculate_price
 from .runtime_settings import OFFER_TIMEOUT, get_int
 
 logger = logging.getLogger(__name__)
@@ -145,6 +145,7 @@ def dispatch_to_read(
         distance_km=dispatch.distance_km,
         eta_minutes=dispatch.eta_minutes,
         price=float(dispatch.price) if dispatch.price is not None else None,
+        currency=CURRENCY,
         created_at=dispatch.created_at,
         responded_at=dispatch.responded_at,
         expires_at=dispatch.expires_at,

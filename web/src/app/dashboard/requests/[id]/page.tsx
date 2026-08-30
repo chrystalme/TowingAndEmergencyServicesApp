@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { ArrowLeft, Truck, MapPin, Clock, Loader2, User, Navigation, Tag, Route } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api';
+import { formatMoney } from '@/lib/utils';
 
 // Leaflet touches `window`, so it must never run during SSR.
 const RequestMap = dynamic(() => import('@/components/RequestMap'), { ssr: false });
@@ -22,6 +23,7 @@ interface ServiceRequest {
   requester_email?: string | null;
   driver_email?: string | null;
   dispatch_status?: string | null;
+  currency?: string | null;
   driver_lat?: number | null;
   driver_lng?: number | null;
   latitude?: number | null;
@@ -159,7 +161,7 @@ export default function RequestDetailPage() {
               {request.price != null && (
                 <div>
                   <dt className="text-gray-500">Est. price</dt>
-                  <dd className="font-medium text-gray-900">${request.price}</dd>
+                  <dd className="font-medium text-gray-900">{formatMoney(request.price, request.currency)}</dd>
                 </div>
               )}
               {request.distance_km != null && (

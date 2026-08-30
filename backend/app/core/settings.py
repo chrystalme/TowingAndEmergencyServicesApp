@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     # "https://app.example.com,https://admin.example.com". "*" is dev-only and
     # forces credentials off (see app/main.py).
     CORS_ORIGINS: str = "*"
+    # Redis, used for pub/sub fan-out (see app/core/broker.py). Empty means
+    # in-process fan-out, which is correct for one instance and silently
+    # wrong for two — so set this anywhere that can scale out. Railway
+    # exposes it as ${{Redis.REDIS_URL}}.
+    REDIS_URL: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

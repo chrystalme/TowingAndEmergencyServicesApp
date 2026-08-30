@@ -41,6 +41,7 @@ advisory and merely logs if its guards refuse (see below).
 | Web     | http://localhost:3000 | Next.js frontend — run locally, see above |
 | API     | http://localhost:8000 | FastAPI (docs at `/docs`) |
 | DB      | localhost:5432         | Postgres 16, db `towing`  |
+| Redis   | localhost:6379         | pub/sub fan-out           |
 
 ## Demo accounts (seeded)
 
@@ -289,6 +290,7 @@ JWT_SECRET_KEY=super-secret-key        # NOTE: read as JWT_SECRET_KEY, not SECRE
 ACCESS_TOKEN_EXPIRE_MINUTES=1440
 ENVIRONMENT=development                # anything else = deployed, see below
 CORS_ORIGINS=*                         # comma-separated origins; "*" is dev-only
+REDIS_URL=redis://redis:6379/0         # empty = in-process fan-out (single instance only)
 ```
 
 > The env name is `JWT_SECRET_KEY` (see `backend/app/core/settings.py`).
@@ -401,6 +403,39 @@ If `railway.json` and the dashboard ever disagree, the dashboard wins — the
 same three settings (pre-deploy command, health check path, start command)
 can be set under **Settings > Deploy**.
 
+
+## Redis (pub/sub fan-out)
+
+Live tracking needs an event published by whichever API instance received a
+driver's position update to reach clients connected to a **different**
+instance. A Python-local registry cannot do that: with two instances behind a
+load balancer, a client watching on instance A never sees an event published
+on B — and the symptom is "tracking randomly doesn't work" rather than
+anything obviously broken.
+
+`app/core/broker.py` provides one interface with two implementations:
+
+| Backend | When | Scope |
+|---|---|---|
+| `redis` | `REDIS_URL` is set | across processes and machines |
+| `in-process` | no `REDIS_URL` | one process only |
+
+The fallback is deliberate so the test suite and a bare local run need no
+extra service. It is **not** a substitute in production: a deployed
+environment without `REDIS_URL` logs a warning at startup, and
+`GET /api/broker-ping` reports which backend is actually live:
+
+```bash
+curl -s localhost:8000/api/broker-ping
+# {"broker":"redis","ok":true}
+```
+
+The app does not refuse to boot without Redis — refusing to serve because
+pub/sub is unconfigured would be a worse outage than degraded tracking — so
+check that endpoint rather than assuming.
+
+On Railway, add a Redis service and set `REDIS_URL` to `${{Redis.REDIS_URL}}`
+on the API service.
 ## Testing
 
 ```bash

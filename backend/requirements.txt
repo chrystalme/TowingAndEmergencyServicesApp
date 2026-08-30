@@ -12,3 +12,6 @@ fastapi-users-db-sqlalchemy==7.0.0
 argon2-cffi==25.1.0
 email-validator==2.3.0
 psycopg2-binary==2.9.9
+# Pub/sub fan-out across API instances (app/core/broker.py). redis-py
+# ships the asyncio client in the same package.
+redis==5.2.1

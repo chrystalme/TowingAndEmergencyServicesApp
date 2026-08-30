@@ -22,6 +22,10 @@ from ..core.database import get_async_session
 from ..models import Dispatch, Driver, ServiceRequest, User
 from ..schemas import DispatchMatchResponse, DispatchRead, DriverCandidate
 from ..services.dispatch import (
+    BUSY_DISPATCH_STATES,
+    DISPATCH_TRANSITIONS,
+    apply_dispatch_status,
+    can_transition,
     dispatch_to_read,
     list_available_drivers,
     match_request,
@@ -75,7 +79,7 @@ async def my_dispatches(
         .order_by(Dispatch.id.desc())
     )
     if active_only:
-        stmt = stmt.where(Dispatch.status.in_(("assigned", "accepted", "enroute", "arrived")))
+        stmt = stmt.where(Dispatch.status.in_(BUSY_DISPATCH_STATES))
 
     rows = (await session.execute(stmt)).all()
     driver_profile = (
@@ -136,7 +140,7 @@ async def create_dispatch(
         await session.execute(
             select(Dispatch).where(
                 Dispatch.request_id == request.id,
-                Dispatch.status.in_(("assigned", "accepted", "enroute", "arrived")),
+                Dispatch.status.in_(BUSY_DISPATCH_STATES),
             )
         )
     ).scalars().first()
@@ -162,6 +166,66 @@ async def create_dispatch(
     )
 
 
+class StatusIn(BaseModel):
+    status: str  # enroute | arrived | completed | cancelled
+
+
+@router.post("/{dispatch_id}/status", response_model=DispatchRead)
+async def advance_dispatch(
+    dispatch_id: int,
+    data: StatusIn,
+    session: AsyncSession = Depends(get_async_session),
+    user: User = Depends(current_active_user),
+) -> DispatchRead:
+    """Move an accepted job along: enroute, arrived, completed, cancelled.
+
+    Previously nothing could write these states, so a job stopped at
+    'accepted' and its driver stayed 'enroute' permanently — every completed
+    job removed a driver from the pool for good. Completing (or cancelling)
+    now releases them.
+
+    The assigned driver may advance the job; the requester may only cancel.
+    """
+    dispatch = await session.get(Dispatch, dispatch_id)
+    if not dispatch:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+
+    request = await session.get(ServiceRequest, dispatch.request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="Linked service request not found")
+
+    is_driver = dispatch.driver_id == user.id
+    is_requester = request.user_id == user.id
+    if not (is_driver or is_requester):
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    if is_requester and not is_driver and data.status != "cancelled":
+        raise HTTPException(
+            status_code=403,
+            detail="Only the assigned driver can advance this job; you may cancel it",
+        )
+
+    if not can_transition(dispatch.status, data.status):
+        allowed = DISPATCH_TRANSITIONS.get(dispatch.status, ())
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot move a '{dispatch.status}' dispatch to '{data.status}'. "
+                f"Allowed: {list(allowed) or 'none (terminal)'}"
+            ),
+        )
+
+    driver_profile = (
+        await session.execute(select(Driver).where(Driver.user_id == dispatch.driver_id))
+    ).scalar_one_or_none()
+
+    apply_dispatch_status(dispatch, request, driver_profile, data.status)
+    await session.commit()
+    await session.refresh(dispatch)
+
+    driver_user = await session.get(User, dispatch.driver_id)
+    return dispatch_to_read(dispatch, driver_user, driver_profile, request)
+
+
 @router.post("/{dispatch_id}/respond", response_model=DispatchRead)
 async def respond_to_dispatch(
     dispatch_id: int,
@@ -185,18 +249,10 @@ async def respond_to_dispatch(
         await session.execute(select(Driver).where(Driver.user_id == user.id))
     ).scalar_one_or_none()
 
-    if data.status == "accepted":
-        dispatch.status = "accepted"
-        if driver_profile:
-            driver_profile.current_status = "enroute"
-        request.status = "enroute"
-    elif data.status == "declined":
-        dispatch.status = "declined"
-        if driver_profile:
-            driver_profile.current_status = "available"
-        request.status = "pending"
-    else:
+    if data.status not in ("accepted", "declined"):
         raise HTTPException(status_code=422, detail="status must be 'accepted' or 'declined'")
+
+    apply_dispatch_status(dispatch, request, driver_profile, data.status)
 
     dispatch.responded_at = __import__("datetime").datetime.utcnow()
     await session.commit()

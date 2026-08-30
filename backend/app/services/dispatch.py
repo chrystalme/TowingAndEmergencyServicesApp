@@ -17,6 +17,66 @@ from .pricing import calculate_price
 # How many nearby candidates to consider / report alongside the assignment.
 CANDIDATE_LIMIT = 5
 
+# The job lifecycle, as a state machine rather than ad-hoc status writes.
+#
+#   assigned --accept--> accepted --> enroute --> arrived --> completed
+#       |                    |            |           |
+#       +-- decline -------> declined     +-----------+--> cancelled
+#
+# Only the driver walks accepted -> completed. Reaching a terminal state
+# releases the driver back into the available pool; without that a driver
+# stayed 'enroute' forever after finishing and was never matched again.
+DISPATCH_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    "assigned": ("accepted", "declined", "cancelled"),
+    "accepted": ("enroute", "arrived", "completed", "cancelled"),
+    "enroute": ("arrived", "completed", "cancelled"),
+    "arrived": ("completed", "cancelled"),
+    "declined": (),
+    "completed": (),
+    "cancelled": (),
+}
+
+# Dispatch states in which the driver is committed to a job.
+BUSY_DISPATCH_STATES = ("assigned", "accepted", "enroute", "arrived")
+
+# Terminal states — the driver is free again.
+TERMINAL_DISPATCH_STATES = ("declined", "completed", "cancelled")
+
+# Dispatch status -> the status the linked ServiceRequest should take.
+REQUEST_STATUS_FOR_DISPATCH: dict[str, str] = {
+    "accepted": "enroute",
+    "enroute": "enroute",
+    "arrived": "in_progress",
+    "completed": "completed",
+    "cancelled": "cancelled",
+    "declined": "pending",
+}
+
+
+def can_transition(current: str, target: str) -> bool:
+    """Whether a dispatch may move from ``current`` to ``target``."""
+    return target in DISPATCH_TRANSITIONS.get(current, ())
+
+
+def apply_dispatch_status(dispatch, request, driver_profile, target: str) -> None:
+    """Move a dispatch to ``target``, syncing the request and the driver.
+
+    Kept in one place so every caller agrees on what a status means: the
+    request follows the dispatch, and the driver is released the moment the
+    job reaches a terminal state.
+    """
+    dispatch.status = target
+
+    request_status = REQUEST_STATUS_FOR_DISPATCH.get(target)
+    if request is not None and request_status is not None:
+        request.status = request_status
+
+    if driver_profile is not None:
+        if target in TERMINAL_DISPATCH_STATES:
+            driver_profile.current_status = 'available'
+        else:
+            driver_profile.current_status = 'enroute'
+
 
 async def list_available_drivers(session: AsyncSession):
     """All online, available drivers that currently have a position."""

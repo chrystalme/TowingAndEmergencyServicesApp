@@ -15,6 +15,7 @@ from ..core.auth import current_active_user
 from ..core.database import get_async_session
 from ..models import Driver, User
 from ..schemas import DriverRead, DriverUpdate
+from .tracking_ws import publish_driver_position
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
 
@@ -41,6 +42,13 @@ async def _upsert_driver(session: AsyncSession, user: User, data: DriverUpdate) 
 
     await session.commit()
     await session.refresh(driver)
+
+    # Fan the new position out to anyone tracking this driver's live jobs.
+    # Positions only ever enter the system here, so the tracking socket can
+    # stay strictly read-only.
+    await publish_driver_position(
+        session, user.id, driver.current_lat, driver.current_lng
+    )
     return driver
 
 

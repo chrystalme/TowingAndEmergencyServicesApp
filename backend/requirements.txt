@@ -18,3 +18,6 @@ psycopg2-binary==2.9.9
 # Pub/sub fan-out across API instances (app/core/broker.py). redis-py
 # ships the asyncio client in the same package.
 redis==5.2.1
+# Server-side FCM. Only used when FIREBASE_CREDENTIALS_JSON is set; the app
+# runs without it and simply skips push (see app/services/push.py).
+firebase-admin==6.6.0

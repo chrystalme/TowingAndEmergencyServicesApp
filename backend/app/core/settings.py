@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     # wrong for two — so set this anywhere that can scale out. Railway
     # exposes it as ${{Redis.REDIS_URL}}.
     REDIS_URL: str = ""
+    # Firebase service-account JSON for server-side push. Optional: with this
+    # unset the app runs normally and skips notifications. It is a secret, so
+    # it lives in an environment variable, never in the repository.
+    FIREBASE_CREDENTIALS_JSON: str = ""
     # Dispatch offer defaults. These are only DEFAULTS — the live values come
     # from app_settings and can be changed through the admin API without a
     # redeploy (see app/services/runtime_settings.py). Editing an env var on a

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:towing_emergency/services/api_service.dart';
+import 'package:towing_emergency/services/push_service.dart';
 
 class AuthProvider with ChangeNotifier {
   bool _isLoading = false;
@@ -71,6 +72,8 @@ class AuthProvider with ChangeNotifier {
       await apiService.login(email, password);
       _isLoggedIn = true;
       await _loadRole();
+      // The token is only useful once the server knows whose it is.
+      await pushService.registerForUser();
       notifyListeners();
       return true;
     } catch (e) {
@@ -83,6 +86,9 @@ class AuthProvider with ChangeNotifier {
 
   // Logout
   Future<void> logout() async {
+    // Before clearing the token, or the next user of this phone inherits
+    // the previous one's job notifications.
+    await pushService.unregister();
     await apiService.logout();
     _isLoggedIn = false;
     _role = 'commuter';

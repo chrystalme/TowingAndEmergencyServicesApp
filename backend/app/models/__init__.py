@@ -101,6 +101,27 @@ class EmergencyLog(Base):
     reporter = relationship("User", back_populates="emergency_logs")
 
 
+# ---------- Device push tokens ----------
+class DeviceToken(Base):
+    """An FCM registration token for one install of the app.
+
+    One user can have several: a phone and a tablet, or the same phone after
+    a reinstall. Tokens also rotate on their own, so this is a set that grows
+    and is pruned when FCM reports one is dead, rather than a single column
+    on the user.
+    """
+    __tablename__ = "device_tokens"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    token: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    # android | ios | web
+    platform: Mapped[str] = mapped_column(String, default="android", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 # ---------- Runtime settings (changeable without a deploy) ----------
 class AppSetting(Base):
     """A single operational knob, stored so it can change without a release.

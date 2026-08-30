@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'providers/auth_provider.dart';
+import 'services/push_service.dart';
 import 'providers/request_provider.dart';
 import 'providers/driver_provider.dart';
 import 'screens/login_screen.dart';
@@ -18,8 +19,15 @@ Future<void> main() async {
   // out, and the router's redirect reads that flag, so without this a user
   // with a perfectly good token in secure storage is bounced to /login on
   // every cold start.
+  // Firebase first: a restored session registers its push token straight
+  // away, so a user who never signs in again still receives job updates.
+  await pushService.init();
+
   final auth = AuthProvider();
   await auth.checkAuthStatus();
+  if (auth.isLoggedIn) {
+    await pushService.registerForUser();
+  }
 
   runApp(TowingEmergencyApp(auth: auth));
 }

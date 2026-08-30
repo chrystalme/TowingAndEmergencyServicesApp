@@ -29,6 +29,7 @@ from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 
 from ..core.auth import UserManager, get_jwt_strategy
 from ..core.broker import get_broker
+from ..services.push import notify_requester_of_status
 from ..core.database import get_async_session
 from ..models import Dispatch, Driver, ServiceRequest, User
 
@@ -188,7 +189,7 @@ async def track_request(
 
 
 async def publish_dispatch_status(
-    dispatch, request=None, driver_email: Optional[str] = None
+    dispatch, request=None, driver_email: Optional[str] = None, session=None
 ) -> None:
     """Broadcast a job's status change to whoever is watching that request.
 
@@ -213,6 +214,11 @@ async def publish_dispatch_status(
             "at": datetime.utcnow().isoformat(),
         },
     )
+
+    # Same event, second channel. The socket only reaches a foregrounded app;
+    # a client whose phone is in their pocket waiting for a tow needs FCM.
+    if session is not None:
+        await notify_requester_of_status(session, dispatch, request, driver_email)
 
 
 async def publish_driver_position(

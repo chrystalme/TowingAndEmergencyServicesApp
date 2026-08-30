@@ -14,6 +14,7 @@ from .emergency_logs import router as emergency_logs_router
 from .drivers import router as drivers_router
 from .dispatch import router as dispatch_router
 from .tracking_ws import router as tracking_router
+from .devices import router as devices_router
 from .admin_settings import router as admin_settings_router
 from .admin_users import router as admin_users_router
 
@@ -47,6 +48,9 @@ router.include_router(dispatch_router)
 # Read-only live tracking socket (JWT in a query param; browsers cannot set
 # headers on a WebSocket handshake).
 router.include_router(tracking_router)
+
+# Push-notification device registration.
+router.include_router(devices_router)
 # Runtime settings (superuser only) - change dispatch behaviour without a deploy.
 router.include_router(admin_settings_router)
 router.include_router(admin_users_router)

@@ -5,6 +5,7 @@ import '../providers/request_provider.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/text_field_widget.dart';
 import '../services/location_service.dart';
+import '../utils/money.dart';
 
 class RequestScreen extends StatefulWidget {
   const RequestScreen({super.key});
@@ -150,7 +151,7 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
           TextFieldWidget(
             controller: _locationController,
             label: 'Address or Landmark *',
-            hint: '123 Main St, San Francisco, CA',
+            hint: 'e.g. Third Mainland Bridge, Lagos',
             prefixIcon: Icons.location_on_outlined,
             validator: (value) {
               if (value == null || value.isEmpty) {
@@ -286,7 +287,7 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
           TextFieldWidget(
             controller: _nameController,
             label: 'Full Name *',
-            hint: 'John Doe',
+            hint: 'Chidi Okonkwo',
             prefixIcon: Icons.person_outline,
             validator: (value) {
               if (value == null || value.isEmpty) {
@@ -301,7 +302,7 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
           TextFieldWidget(
             controller: _phoneController,
             label: 'Phone Number *',
-            hint: '(555) 123-4567',
+            hint: '08030001122',
             prefixIcon: Icons.phone_outlined,
             keyboardType: TextInputType.phone,
             validator: (value) {
@@ -450,7 +451,8 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
                               _matchRow('ETA', match['eta_minutes'] == null
                                   ? null
                                   : '~${match['eta_minutes']} min'),
-                              _matchRow('Estimated price', match['price']?.toString()),
+                              _matchRow('Estimated price',
+                                  formatMoney(match['price'], match['currency'] as String?)),
                             ],
                           ),
                           actions: [

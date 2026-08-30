@@ -187,6 +187,34 @@ async def track_request(
         await subscription.aclose()
 
 
+async def publish_dispatch_status(
+    dispatch, request=None, driver_email: Optional[str] = None
+) -> None:
+    """Broadcast a job's status change to whoever is watching that request.
+
+    The socket previously carried only driver_position, so a client watching a
+    tow learned where the van was but never that it had accepted, arrived, or
+    finished — the events they actually care about. Position without status is
+    a moving dot with no story.
+    """
+    broker = get_broker()
+    await broker.publish(
+        channel_for(dispatch.request_id),
+        {
+            "type": "dispatch_status",
+            "request_id": dispatch.request_id,
+            "dispatch_id": dispatch.id,
+            "status": dispatch.status,
+            "request_status": getattr(request, "status", None),
+            "driver_id": dispatch.driver_id,
+            "driver_email": driver_email,
+            "eta_minutes": dispatch.eta_minutes,
+            "price": float(dispatch.price) if dispatch.price is not None else None,
+            "at": datetime.utcnow().isoformat(),
+        },
+    )
+
+
 async def publish_driver_position(
     session: AsyncSession, driver_user_id: int, lat: Optional[float], lng: Optional[float]
 ) -> int:

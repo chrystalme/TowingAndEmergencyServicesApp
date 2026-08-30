@@ -34,6 +34,7 @@ from ..services.dispatch import (
     rank_candidates,
     _candidate_schema,
 )
+from .tracking_ws import publish_dispatch_status
 from ..services.runtime_settings import (
     MAX_EXTENSIONS,
     OFFER_EXTENSION,
@@ -175,6 +176,9 @@ async def create_dispatch(
     driver_profile.current_status = "enroute"
     await session.commit()
 
+    # Tell anyone already watching this request that a van was matched.
+    await publish_dispatch_status(dispatch, request, driver_user.email)
+
     return DispatchMatchResponse(
         dispatch=dispatch_to_read(dispatch, driver_user, driver_profile),
         request_status=request.status,
@@ -295,6 +299,9 @@ async def advance_dispatch(
     await session.refresh(dispatch)
 
     driver_user = await session.get(User, dispatch.driver_id)
+    await publish_dispatch_status(
+        dispatch, request, driver_user.email if driver_user else None
+    )
     return dispatch_to_read(dispatch, driver_user, driver_profile, request)
 
 
@@ -329,4 +336,5 @@ async def respond_to_dispatch(
     dispatch.responded_at = __import__("datetime").datetime.utcnow()
     await session.commit()
     await session.refresh(dispatch)
+    await publish_dispatch_status(dispatch, request, user.email)
     return dispatch_to_read(dispatch, user, driver_profile, request)

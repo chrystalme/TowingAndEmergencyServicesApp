@@ -407,3 +407,146 @@ async def test_driver_only_sees_their_own_jobs(client: AsyncClient, auth_headers
 
     assert len((await client.get("/api/dispatch/mine", headers=mine)).json()) == 1
     assert (await client.get("/api/dispatch/mine", headers=other)).json() == []
+
+
+# --- Job lifecycle ---
+async def _accepted_job(client: AsyncClient, requester: dict, driver_email: str, lat: float, lng: float):
+    """Drive a request through to an accepted dispatch; return (sr_id, dispatch_id, drv)."""
+    drv = await _register_and_login(client, driver_email)
+    await _go_online(client, drv, lat + 0.0001, lng + 0.0001)
+    req = await client.post(
+        "/api/service-requests",
+        json={
+            "description": "Lifecycle job",
+            "location": "Somewhere",
+            "latitude": lat,
+            "longitude": lng,
+        },
+        headers=requester,
+    )
+    sr_id = req.json()["id"]
+    match = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=requester)
+    dispatch_id = match.json()["dispatch"]["id"]
+    accepted = await client.post(
+        f"/api/dispatch/{dispatch_id}/respond", json={"status": "accepted"}, headers=drv
+    )
+    assert accepted.status_code == 200
+    return sr_id, dispatch_id, drv
+
+
+@pytest.mark.asyncio
+async def test_driver_walks_job_to_completion_and_is_released(
+    client: AsyncClient, auth_headers: dict
+):
+    """accepted -> enroute -> arrived -> completed, freeing the driver at the end.
+
+    Nothing could previously write past 'accepted', so a driver who finished a
+    job stayed 'enroute' forever and was never matched again.
+    """
+    sr_id, dispatch_id, drv = await _accepted_job(
+        client, auth_headers, "lifecycle-driver@example.com", 44.0, -78.0
+    )
+
+    # Busy while the job is live.
+    assert (await client.get("/api/drivers/me", headers=drv)).json()["current_status"] == "enroute"
+
+    for target, expected_request in (
+        ("enroute", "enroute"),
+        ("arrived", "in_progress"),
+        ("completed", "completed"),
+    ):
+        resp = await client.post(
+            f"/api/dispatch/{dispatch_id}/status", json={"status": target}, headers=drv
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == target
+        sr = await client.get(f"/api/service-requests/{sr_id}", headers=auth_headers)
+        assert sr.json()["status"] == expected_request
+
+    # Released back into the pool, and the finished job leaves the active list.
+    assert (await client.get("/api/drivers/me", headers=drv)).json()["current_status"] == "available"
+    assert (await client.get("/api/dispatch/mine", headers=drv)).json() == []
+
+
+@pytest.mark.asyncio
+async def test_completed_driver_can_take_another_job(client: AsyncClient, auth_headers: dict):
+    """The whole point of releasing: a driver is matchable again afterwards."""
+    _, dispatch_id, drv = await _accepted_job(
+        client, auth_headers, "reuse-driver@example.com", 45.0, -79.0
+    )
+    await client.post(f"/api/dispatch/{dispatch_id}/status", json={"status": "completed"}, headers=drv)
+
+    second = await client.post(
+        "/api/service-requests",
+        json={
+            "description": "Second job for the same driver",
+            "location": "Nearby",
+            "latitude": 45.0,
+            "longitude": -79.0,
+        },
+        headers=auth_headers,
+    )
+    match = await client.post(
+        "/api/dispatch", json={"request_id": second.json()["id"]}, headers=auth_headers
+    )
+    assert match.status_code == 201, match.text
+    assert match.json()["dispatch"]["driver_email"] == "reuse-driver@example.com"
+
+
+@pytest.mark.asyncio
+async def test_illegal_transitions_are_rejected(client: AsyncClient, auth_headers: dict):
+    """The state machine refuses moves that skip or reverse the flow."""
+    _, dispatch_id, drv = await _accepted_job(
+        client, auth_headers, "illegal-driver@example.com", 46.0, -80.0
+    )
+
+    # Cannot go back to 'assigned'.
+    back = await client.post(
+        f"/api/dispatch/{dispatch_id}/status", json={"status": "assigned"}, headers=drv
+    )
+    assert back.status_code == 409
+
+    # Terminal means terminal.
+    await client.post(f"/api/dispatch/{dispatch_id}/status", json={"status": "completed"}, headers=drv)
+    again = await client.post(
+        f"/api/dispatch/{dispatch_id}/status", json={"status": "enroute"}, headers=drv
+    )
+    assert again.status_code == 409
+    assert "terminal" in again.json()["detail"] or "Cannot move" in again.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_requester_may_cancel_but_not_advance(client: AsyncClient, auth_headers: dict):
+    """The requester can call the job off; only the driver can progress it."""
+    sr_id, dispatch_id, drv = await _accepted_job(
+        client, auth_headers, "cancel-driver@example.com", 47.0, -81.0
+    )
+
+    forbidden = await client.post(
+        f"/api/dispatch/{dispatch_id}/status", json={"status": "arrived"}, headers=auth_headers
+    )
+    assert forbidden.status_code == 403
+
+    cancelled = await client.post(
+        f"/api/dispatch/{dispatch_id}/status", json={"status": "cancelled"}, headers=auth_headers
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+
+    sr = await client.get(f"/api/service-requests/{sr_id}", headers=auth_headers)
+    assert sr.json()["status"] == "cancelled"
+    # Cancelling also frees the driver.
+    assert (await client.get("/api/drivers/me", headers=drv)).json()["current_status"] == "available"
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_touch_a_job(client: AsyncClient, auth_headers: dict):
+    """Someone who is neither the driver nor the requester sees a 404."""
+    _, dispatch_id, _ = await _accepted_job(
+        client, auth_headers, "outsider-driver@example.com", 48.0, -82.0
+    )
+    outsider = await _register_and_login(client, "outsider-nosy@example.com")
+    resp = await client.post(
+        f"/api/dispatch/{dispatch_id}/status", json={"status": "completed"}, headers=outsider
+    )
+    assert resp.status_code == 404

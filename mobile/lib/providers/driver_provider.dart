@@ -80,6 +80,40 @@ class DriverProvider extends ChangeNotifier {
     }
   }
 
+  /// Move an accepted job along: enroute -> arrived -> completed.
+  ///
+  /// Completing releases the driver back into the available pool, so the
+  /// profile is re-read alongside the job list.
+  Future<bool> advance(int dispatchId, String status) async {
+    _setLoading(true);
+    try {
+      await apiService.advanceDispatch(dispatchId, status);
+      await loadProfile();
+      await loadAssignments();
+      return true;
+    } catch (e) {
+      _setError('Could not move the job to $status: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Buy more time before an unanswered offer lapses.
+  Future<bool> extend(int dispatchId) async {
+    _setLoading(true);
+    try {
+      await apiService.extendDispatch(dispatchId);
+      await loadAssignments();
+      return true;
+    } catch (e) {
+      _setError('Could not extend: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   /// Accept or decline an assigned job.
   ///
   /// Accepting moves the driver to `enroute`; declining returns them to the

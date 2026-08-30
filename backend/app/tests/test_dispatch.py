@@ -17,7 +17,25 @@ async def _register_and_login(client: AsyncClient, email: str, password: str = "
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _go_online(client: AsyncClient, headers: dict, lat: float, lng: float) -> None:
+def _auth(headers: dict) -> dict:
+    """Just the Authorization header, ignoring any test-only extras."""
+    return {'Authorization': headers['Authorization']}
+
+
+async def _go_online(
+    client: AsyncClient, headers: dict, lat: float, lng: float, email: str | None = None
+) -> None:
+    """Approve a driver, then put them online.
+
+    Registration creates a commuter and driving is permissioned, so the
+    approval an administrator would perform has to happen first.
+    """
+    from app.tests.testdb import approve_driver
+
+    if email is None:
+        me = await client.get('/api/users/me', headers=_auth(headers))
+        email = me.json()['email']
+    await approve_driver(email)
     resp = await client.put(
         "/api/drivers/me",
         json={"is_online": True, "current_status": "available", "current_lat": lat, "current_lng": lng},
@@ -58,6 +76,9 @@ async def test_service_request_persists_dispatch_fields_and_coords(client: Async
 @pytest.mark.asyncio
 async def test_driver_goes_online_with_position(client: AsyncClient):
     headers = await _register_and_login(client, "driver@example.com")
+    from app.tests.testdb import approve_driver
+
+    await approve_driver("driver@example.com")
     resp = await client.put(
         "/api/drivers/me",
         json={"is_online": True, "current_status": "available", "current_lat": 37.7, "current_lng": -122.4},
@@ -787,3 +808,109 @@ async def test_settings_are_bounded_and_admin_only(
             headers=auth_headers,
         )
     ).status_code == 403
+
+
+# --- Driving is a permissioned role ---
+@pytest.mark.asyncio
+async def test_unapproved_user_cannot_enter_the_dispatch_pool(client: AsyncClient):
+    """A commuter must not be able to make themselves dispatchable.
+
+    This previously succeeded AND promoted the caller to the driver role on the
+    way in, so tapping a button was enough to start receiving real clients.
+    Hiding the button in the app would not have fixed it.
+    """
+    commuter = await _register_and_login(client, "not-a-driver@example.com")
+
+    resp = await client.put(
+        "/api/drivers/me",
+        json={"is_online": True, "current_status": "available",
+              "current_lat": 6.5, "current_lng": 3.3},
+        headers=commuter,
+    )
+    assert resp.status_code == 403
+    assert "not approved to drive" in resp.json()["detail"]
+
+    # And the role was not quietly changed by the attempt.
+    me = await client.get("/api/users/me", headers=commuter)
+    assert me.json()["role"] == "commuter"
+
+
+@pytest.mark.asyncio
+async def test_all_driver_endpoints_are_gated(client: AsyncClient):
+    """Reading and position updates are gated too, not just going online."""
+    commuter = await _register_and_login(client, "gated@example.com")
+    assert (await client.get("/api/drivers/me", headers=commuter)).status_code == 403
+    assert (
+        await client.post(
+            "/api/drivers/me/position",
+            json={"current_lat": 6.5, "current_lng": 3.3},
+            headers=commuter,
+        )
+    ).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_grants_and_revokes_the_driver_role(
+    client: AsyncClient, admin_factory
+):
+    """Granting `driver` is the approval step; revoking pulls them from the pool."""
+    admin = await admin_factory("role-admin@example.com")
+    applicant = await _register_and_login(client, "applicant@example.com")
+
+    # Blocked before approval.
+    assert (
+        await client.put(
+            "/api/drivers/me",
+            json={"is_online": True, "current_status": "available",
+                  "current_lat": 6.5, "current_lng": 3.3},
+            headers=applicant,
+        )
+    ).status_code == 403
+
+    listed = await client.get("/api/admin/users?role=commuter", headers=admin)
+    assert listed.status_code == 200
+    target = next(u for u in listed.json() if u["email"] == "applicant@example.com")
+
+    granted = await client.put(
+        f"/api/admin/users/{target['id']}/role", json={"role": "driver"}, headers=admin
+    )
+    assert granted.status_code == 200
+    assert granted.json()["role"] == "driver"
+
+    # Now they can go online.
+    online = await client.put(
+        "/api/drivers/me",
+        json={"is_online": True, "current_status": "available",
+              "current_lat": 6.5, "current_lng": 3.3},
+        headers=applicant,
+    )
+    assert online.status_code == 200
+    assert online.json()["is_online"] is True
+
+    # Revoking takes them out of the pool immediately, not when they notice.
+    revoked = await client.put(
+        f"/api/admin/users/{target['id']}/role", json={"role": "commuter"}, headers=admin
+    )
+    assert revoked.status_code == 200
+    assert revoked.json()["is_online"] is False
+    assert revoked.json()["current_status"] == "off_duty"
+
+
+@pytest.mark.asyncio
+async def test_role_admin_endpoints_are_admin_only(client: AsyncClient, auth_headers: dict):
+    assert (await client.get("/api/admin/users", headers=auth_headers)).status_code == 403
+    assert (
+        await client.put(
+            "/api/admin/users/1/role", json={"role": "driver"}, headers=auth_headers
+        )
+    ).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_unknown_role_is_rejected(client: AsyncClient, admin_factory):
+    admin = await admin_factory("role-admin2@example.com")
+    resp = await client.put(
+        "/api/admin/users/1/role", json={"role": "wizard"}, headers=admin
+    )
+    assert resp.status_code == 422
+    assert "Unknown role" in resp.json()["detail"]

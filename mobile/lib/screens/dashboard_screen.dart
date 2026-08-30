@@ -117,6 +117,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onPressed: () => context.push('/request'),
               ),
               const SizedBox(height: 12),
+              // Driver Console, only for approved drivers. The server
+              // refuses the endpoints outright; this stops offering a
+              // button that could only produce a 403.
+              if (context.watch<AuthProvider>().canDrive)
               // Driver Console button — go active as a driver or go offline
               SecondaryButton(
                 text: 'Driver Console',

@@ -14,21 +14,10 @@ from app.core.settings import settings
 from fastapi import Depends
 
 
-# Use an in-memory SQLite database for tests
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-
-test_engine = create_async_engine(
-    TEST_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-
-TestAsyncSessionLocal = async_sessionmaker(
-    bind=test_engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False,
-)
+# The engine lives in app/tests/testdb.py so ordinary test helpers can import
+# it. Importing it from conftest re-executes this file under a second module
+# name and builds a different, empty database.
+from app.tests.testdb import TestAsyncSessionLocal, test_engine  # noqa: E402
 
 
 async def override_get_async_session() -> AsyncSession:
@@ -110,6 +99,37 @@ async def auth_headers(client: AsyncClient, test_user: dict):
     assert response.status_code == 200
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def driver_factory(client: AsyncClient):
+    """Register a user and approve them to drive.
+
+    Driving is a granted role, so a freshly registered account cannot go
+    online. Tests that need a working driver must approve one first, exactly
+    as an administrator would.
+    """
+    from app.models import User as UserModel
+    from sqlalchemy import select as _select
+
+    async def _make(email: str, password: str = 'driverpass123'):
+        resp = await client.post(
+            '/api/auth/register', json={'email': email, 'password': password}
+        )
+        assert resp.status_code == 201, resp.text
+        async with TestAsyncSessionLocal() as session:
+            user = (
+                await session.execute(_select(UserModel).where(UserModel.email == email))
+            ).scalar_one()
+            user.role = 'driver'
+            await session.commit()
+        login = await client.post(
+            '/api/auth/jwt/login', data={'username': email, 'password': password}
+        )
+        assert login.status_code == 200, login.text
+        return {'Authorization': f"Bearer {login.json()['access_token']}"}
+
+    return _make
 
 
 @pytest_asyncio.fixture

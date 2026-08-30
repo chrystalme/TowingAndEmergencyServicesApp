@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/request_provider.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/text_field_widget.dart';
+import '../services/location_service.dart';
 
 class RequestScreen extends StatefulWidget {
   const RequestScreen({super.key});
@@ -47,20 +48,30 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
   Future<void> _getCurrentLocation() async {
     setState(() => _gettingLocation = true);
     try {
-      // In a real app, you'd use geolocator package
-      // For now, we'll simulate getting coordinates
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // Simulate coordinates (a real geolocator package replaces this).
-      const lat = 37.7749;
-      const lng = -122.4194;
-      _latitude = lat;
-      _longitude = lng;
-      _locationController.text = '$lat, $lng';
-      
+
+      // Real device position. This used to be a hardcoded San Francisco
+      // constant, so every request was filed from the same point and the
+      // distance to any driver was meaningless.
+      final position = await locationService.current();
+      _latitude = position.latitude;
+      _longitude = position.longitude;
+      _locationController.text =
+          '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location captured: 37.7749, -122.4194')),
+          SnackBar(content: Text('Location captured: ${_locationController.text}')),
+        );
+      }
+    } on LocationException catch (e) {
+      // Say which problem it is: 'turn on location services' and 'you
+      // denied permission' need different actions from the user.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            backgroundColor: Colors.orange.shade800,
+          ),
         );
       }
     } catch (e) {

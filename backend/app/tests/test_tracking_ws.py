@@ -387,3 +387,68 @@ async def test_status_push_is_silent_for_internal_transitions(
         user_id = 1
 
     assert await push.notify_requester_of_status(db_session, _D(), _R()) == 0
+
+
+def test_tracking_socket_does_not_hold_a_session_for_its_lifetime():
+    """The socket must not take a session as a dependency.
+
+    A FastAPI dependency lives as long as the connection it was injected into.
+    On a socket a client keeps open while waiting for a tow, that held one
+    pooled connection and one open transaction for the whole watch - and an
+    open transaction holds its locks. Two such sessions, left over from a QA
+    run, blocked a migration's ALTER TABLE until the deploy timed out.
+
+    Asserted structurally because the failure is invisible to a test that only
+    checks the socket's replies: it behaved perfectly while leaking.
+    """
+    import inspect
+
+    from app.api import tracking_ws
+
+    signature = inspect.signature(tracking_ws.track_request)
+    assert "session" not in signature.parameters, (
+        "track_request must open its own short-lived session rather than "
+        "receiving one via Depends - see the docstring on get_async_session"
+    )
+
+    source = inspect.getsource(tracking_ws.track_request)
+    assert "AsyncSessionLocal" in source
+    # Everything needing the database happens before the streaming loop.
+    assert source.index("async with AsyncSessionLocal") < source.index("broker.subscribe")
+
+
+@pytest.mark.asyncio
+async def test_session_dependency_leaves_no_open_transaction():
+    """A read-only request must not leave its transaction open.
+
+    Postgres reports such a connection as 'idle in transaction' and it keeps
+    every lock it acquired, which is what blocks schema changes.
+    """
+    from sqlalchemy import select
+
+    from app.models import User
+    from app.tests.testdb import TestAsyncSessionLocal
+
+    async def dependency():
+        """The production dependency's shape, against the test engine."""
+        async with TestAsyncSessionLocal() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+            else:
+                await session.rollback()
+
+    agen = dependency()
+    session = await agen.__anext__()
+    # A plain read - no writes, no explicit commit, the common case.
+    await session.execute(select(User).limit(1))
+    assert session.in_transaction()
+
+    with pytest.raises(StopAsyncIteration):
+        await agen.__anext__()
+
+    assert not session.in_transaction(), (
+        "the dependency returned the connection with a transaction still open"
+    )

@@ -21,7 +21,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +30,7 @@ from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from ..core.auth import UserManager, get_jwt_strategy
 from ..core.broker import get_broker
 from ..services.push import notify_requester_of_status
-from ..core.database import get_async_session
+from ..core.database import AsyncSessionLocal
 from ..models import Dispatch, Driver, ServiceRequest, User
 
 logger = logging.getLogger(__name__)
@@ -147,7 +147,6 @@ async def track_request(
     websocket: WebSocket,
     request_id: int,
     token: str = "",
-    session: AsyncSession = Depends(get_async_session),
 ) -> None:
     """Stream the assigned driver's position for one request.
 
@@ -158,20 +157,35 @@ async def track_request(
     # checks below pass.
     await websocket.accept()
 
-    user = await user_from_token(token, session)
-    if user is None:
-        await websocket.close(code=WS_UNAUTHENTICATED)
-        return
+    # The session is opened here and released before the streaming loop,
+    # rather than injected with Depends(get_async_session).
+    #
+    # A dependency lives as long as the connection it was injected into. On a
+    # socket a client keeps open while they wait for a tow, that meant one
+    # pooled connection and one OPEN TRANSACTION held for the whole watch -
+    # and a transaction holds its locks for as long as it lives. Two of these,
+    # left over from a QA run, blocked a migration's ALTER TABLE until the
+    # deploy timed out and rolled back.
+    #
+    # Every query this endpoint needs happens up front, so nothing is lost by
+    # closing the session before the part that waits.
+    async with AsyncSessionLocal() as session:
+        user = await user_from_token(token, session)
+        if user is None:
+            await websocket.close(code=WS_UNAUTHENTICATED)
+            return
 
-    allowed, request = await _may_watch(session, user, request_id)
-    if request is None:
-        await websocket.close(code=WS_NOT_FOUND)
-        return
-    if not allowed:
-        await websocket.close(code=WS_FORBIDDEN)
-        return
+        allowed, request = await _may_watch(session, user, request_id)
+        if request is None:
+            await websocket.close(code=WS_NOT_FOUND)
+            return
+        if not allowed:
+            await websocket.close(code=WS_FORBIDDEN)
+            return
 
-    snapshot = await current_driver_position(session, request_id)
+        snapshot = await current_driver_position(session, request_id)
+
+    # No session held from here on: the loop below can run for hours.
     if snapshot is not None:
         await websocket.send_json(snapshot)
 

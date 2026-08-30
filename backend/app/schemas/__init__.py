@@ -132,6 +132,11 @@ class DispatchRead(BaseModel):
     price: Optional[float] = None
     created_at: datetime
     responded_at: Optional[datetime] = None
+    # When an unanswered offer lapses, and how many times the driver extended
+    # it. Surfaced so a client can show a countdown and a driver can see
+    # whether they still have an extension left.
+    expires_at: Optional[datetime] = None
+    extension_count: int = 0
     # Denormalized for display convenience: who was matched and where they are.
     driver_name: Optional[str] = None
     driver_email: Optional[str] = None

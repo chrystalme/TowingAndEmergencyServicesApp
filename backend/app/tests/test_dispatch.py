@@ -251,6 +251,10 @@ async def test_redispatch_after_decline_does_not_break_reads(
     """
     drv = await _register_and_login(client, "redispatch-driver@example.com")
     await _go_online(client, drv, 40.0001, -74.0001)
+    # A second, slightly farther driver: declining now falls through to them
+    # rather than re-offering the same driver the job they just refused.
+    backup = await _register_and_login(client, "redispatch-backup@example.com")
+    await _go_online(client, backup, 40.0009, -74.0009)
 
     req = await client.post(
         "/api/service-requests",
@@ -277,6 +281,8 @@ async def test_redispatch_after_decline_does_not_break_reads(
     assert second.status_code == 201, second.text
     second_id = second.json()["dispatch"]["id"]
     assert second_id != first_id  # genuinely two rows for one request
+    # ...and the fallback chain moved on to the next candidate.
+    assert second.json()["dispatch"]["driver_email"] == "redispatch-backup@example.com"
 
     # The read paths must survive that.
     detail = await client.get(f"/api/service-requests/{sr_id}", headers=auth_headers)
@@ -550,3 +556,234 @@ async def test_outsider_cannot_touch_a_job(client: AsyncClient, auth_headers: di
         f"/api/dispatch/{dispatch_id}/status", json={"status": "completed"}, headers=outsider
     )
     assert resp.status_code == 404
+
+
+# --- Offer expiry, fallback chain, and runtime settings ---
+async def _expire_now(session, dispatch_id: int):
+    """Backdate an offer deadline so the next sweep lapses it.
+
+    Beats sleeping through a real two-minute window in a unit test, and still
+    exercises the production sweep rather than a test-only shortcut. Takes the
+    db_session fixture: importing the session factory from conftest would
+    re-execute that module and hit a different, empty database.
+    """
+    from datetime import datetime, timedelta
+    from app.models import Dispatch
+
+    dispatch = await session.get(Dispatch, dispatch_id)
+    dispatch.expires_at = datetime.utcnow() - timedelta(seconds=1)
+    await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_new_offer_carries_a_deadline(client: AsyncClient, auth_headers: dict):
+    drv = await _register_and_login(client, "deadline-driver@example.com")
+    await _go_online(client, drv, 50.0001, -83.0001)
+    req = await client.post(
+        "/api/service-requests",
+        json={"description": "Deadline", "location": "X", "latitude": 50.0, "longitude": -83.0},
+        headers=auth_headers,
+    )
+    match = await client.post(
+        "/api/dispatch", json={"request_id": req.json()["id"]}, headers=auth_headers
+    )
+    assert match.status_code == 201
+    jobs = (await client.get("/api/dispatch/mine", headers=drv)).json()
+    assert jobs[0]["expires_at"] is not None
+    assert jobs[0]["extension_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_unanswered_offer_lapses_and_frees_the_driver(
+    client: AsyncClient, auth_headers: dict, db_session
+):
+    """A driver who never answers must not hold the request or their own slot."""
+    drv = await _register_and_login(client, "silent-driver@example.com")
+    await _go_online(client, drv, 51.0001, -84.0001)
+    req = await client.post(
+        "/api/service-requests",
+        json={"description": "Ignored", "location": "X", "latitude": 51.0, "longitude": -84.0},
+        headers=auth_headers,
+    )
+    sr_id = req.json()["id"]
+    dispatch_id = (
+        await client.post("/api/dispatch", json={"request_id": sr_id}, headers=auth_headers)
+    ).json()["dispatch"]["id"]
+
+    await _expire_now(db_session, dispatch_id)
+
+    # Reading the job list sweeps: the stale offer leaves the active list.
+    assert (await client.get("/api/dispatch/mine", headers=drv)).json() == []
+    # Driver is back in the pool, request is dispatchable again.
+    assert (await client.get("/api/drivers/me", headers=drv)).json()["current_status"] == "available"
+    sr = await client.get(f"/api/service-requests/{sr_id}", headers=auth_headers)
+    assert sr.json()["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_lapsed_offer_falls_through_to_the_next_candidate(
+    client: AsyncClient, auth_headers: dict, db_session
+):
+    """The ranked list becomes a real chain: nearest ignores it, next gets it."""
+    near = await _register_and_login(client, "chain-near@example.com")
+    far = await _register_and_login(client, "chain-far@example.com")
+    await _go_online(client, near, 52.0001, -85.0001)
+    await _go_online(client, far, 52.0020, -85.0020)
+
+    req = await client.post(
+        "/api/service-requests",
+        json={"description": "Chain", "location": "X", "latitude": 52.0, "longitude": -85.0},
+        headers=auth_headers,
+    )
+    sr_id = req.json()["id"]
+    first = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=auth_headers)
+    assert first.json()["dispatch"]["driver_email"] == "chain-near@example.com"
+
+    await _expire_now(db_session, first.json()["dispatch"]["id"])
+
+    second = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=auth_headers)
+    assert second.status_code == 201, second.text
+    assert second.json()["dispatch"]["driver_email"] == "chain-far@example.com"
+
+
+@pytest.mark.asyncio
+async def test_chain_reports_exhaustion_rather_than_looping(
+    client: AsyncClient, auth_headers: dict, db_session
+):
+    """Once everyone nearby has been tried, say so instead of re-offering."""
+    only = await _register_and_login(client, "chain-only@example.com")
+    await _go_online(client, only, 53.0001, -86.0001)
+    req = await client.post(
+        "/api/service-requests",
+        json={"description": "Exhaust", "location": "X", "latitude": 53.0, "longitude": -86.0},
+        headers=auth_headers,
+    )
+    sr_id = req.json()["id"]
+    first = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=auth_headers)
+    await _expire_now(db_session, first.json()["dispatch"]["id"])
+
+    again = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=auth_headers)
+    assert again.status_code == 422
+    assert "already been tried" in again.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_driver_can_extend_an_offer_up_to_the_cap(
+    client: AsyncClient, auth_headers: dict
+):
+    """A driver mid-decision buys time; the cap stops it being held forever."""
+    drv = await _register_and_login(client, "extend-driver@example.com")
+    await _go_online(client, drv, 54.0001, -87.0001)
+    req = await client.post(
+        "/api/service-requests",
+        json={"description": "Extend", "location": "X", "latitude": 54.0, "longitude": -87.0},
+        headers=auth_headers,
+    )
+    dispatch_id = (
+        await client.post(
+            "/api/dispatch", json={"request_id": req.json()["id"]}, headers=auth_headers
+        )
+    ).json()["dispatch"]["id"]
+
+    original = (await client.get("/api/dispatch/mine", headers=drv)).json()[0]["expires_at"]
+
+    first = await client.post(f"/api/dispatch/{dispatch_id}/extend", json={}, headers=drv)
+    assert first.status_code == 200, first.text
+    assert first.json()["extension_count"] == 1
+    assert first.json()["expires_at"] > original
+
+    second = await client.post(f"/api/dispatch/{dispatch_id}/extend", json={}, headers=drv)
+    assert second.status_code == 200
+    assert second.json()["extension_count"] == 2
+
+    # Default cap is 2.
+    third = await client.post(f"/api/dispatch/{dispatch_id}/extend", json={}, headers=drv)
+    assert third.status_code == 409
+    assert "limit is 2" in third.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_only_the_assigned_driver_can_extend(client: AsyncClient, auth_headers: dict):
+    drv = await _register_and_login(client, "extend-owner@example.com")
+    await _go_online(client, drv, 55.0001, -88.0001)
+    req = await client.post(
+        "/api/service-requests",
+        json={"description": "Extend authz", "location": "X", "latitude": 55.0, "longitude": -88.0},
+        headers=auth_headers,
+    )
+    dispatch_id = (
+        await client.post(
+            "/api/dispatch", json={"request_id": req.json()["id"]}, headers=auth_headers
+        )
+    ).json()["dispatch"]["id"]
+
+    # The requester is not the driver.
+    assert (
+        await client.post(f"/api/dispatch/{dispatch_id}/extend", json={}, headers=auth_headers)
+    ).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_settings_change_takes_effect_without_restart(
+    client: AsyncClient, auth_headers: dict, admin_factory
+):
+    """The whole point: change the timeout live and the next offer uses it."""
+    admin = await admin_factory("settings-admin@example.com")
+
+    listed = await client.get("/api/admin/settings", headers=admin)
+    assert listed.status_code == 200
+    by_key = {row["key"]: row for row in listed.json()}
+    assert by_key["dispatch_offer_timeout_seconds"]["value"] == 120  # the default
+    assert by_key["dispatch_offer_timeout_seconds"]["source"] == "default"
+
+    changed = await client.put(
+        "/api/admin/settings/dispatch_offer_timeout_seconds",
+        json={"value": 300},
+        headers=admin,
+    )
+    assert changed.status_code == 200
+    assert changed.json()["value"] == 300
+    assert changed.json()["source"] == "override"
+
+    # A new offer picks the new window up immediately.
+    drv = await _register_and_login(client, "settings-driver@example.com")
+    await _go_online(client, drv, 56.0001, -89.0001)
+    req = await client.post(
+        "/api/service-requests",
+        json={"description": "Live setting", "location": "X", "latitude": 56.0, "longitude": -89.0},
+        headers=auth_headers,
+    )
+    await client.post("/api/dispatch", json={"request_id": req.json()["id"]}, headers=auth_headers)
+
+    from datetime import datetime
+
+    job = (await client.get("/api/dispatch/mine", headers=drv)).json()[0]
+    window = (datetime.fromisoformat(job["expires_at"]) - datetime.utcnow()).total_seconds()
+    assert 240 < window <= 300, f"expected the 300s override, got {window}s"
+
+
+@pytest.mark.asyncio
+async def test_settings_are_bounded_and_admin_only(
+    client: AsyncClient, auth_headers: dict, admin_factory
+):
+    admin = await admin_factory("bounds-admin@example.com")
+
+    # Out of range is refused rather than making offers expire instantly.
+    too_small = await client.put(
+        "/api/admin/settings/dispatch_offer_timeout_seconds", json={"value": 1}, headers=admin
+    )
+    assert too_small.status_code == 422
+    assert "between 30 and 900" in too_small.json()["detail"]
+
+    unknown = await client.put("/api/admin/settings/nope", json={"value": 5}, headers=admin)
+    assert unknown.status_code == 404
+
+    # Ordinary users cannot read or change operational settings.
+    assert (await client.get("/api/admin/settings", headers=auth_headers)).status_code == 403
+    assert (
+        await client.put(
+            "/api/admin/settings/dispatch_offer_timeout_seconds",
+            json={"value": 300},
+            headers=auth_headers,
+        )
+    ).status_code == 403

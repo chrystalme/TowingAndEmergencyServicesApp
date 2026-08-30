@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     # wrong for two — so set this anywhere that can scale out. Railway
     # exposes it as ${{Redis.REDIS_URL}}.
     REDIS_URL: str = ""
+    # Dispatch offer defaults. These are only DEFAULTS — the live values come
+    # from app_settings and can be changed through the admin API without a
+    # redeploy (see app/services/runtime_settings.py). Editing an env var on a
+    # PaaS restarts the service, which is what that indirection avoids.
+    DISPATCH_OFFER_TIMEOUT_SECONDS: int = 120
+    DISPATCH_OFFER_EXTENSION_SECONDS: int = 60
+    DISPATCH_OFFER_MAX_EXTENSIONS: int = 2
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

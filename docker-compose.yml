@@ -36,6 +36,10 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:secret@db/towing
       JWT_SECRET_KEY: super-secret-key
       REDIS_URL: redis://redis:6379/0
+      # Read from a gitignored .env that compose loads automatically, so the
+      # service-account key never enters the repository. Unset is fine: push
+      # is skipped and everything else works.
+      FIREBASE_CREDENTIALS_JSON: ${FIREBASE_CREDENTIALS_JSON:-}
       # Unlocks app/seed.py. Deliberately set HERE and not in the image, so the
       # published image cannot seed demo data in any environment that doesn't
       # opt in via this dev-only compose file.

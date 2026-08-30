@@ -20,6 +20,26 @@ from fastapi import Depends
 from app.tests.testdb import TestAsyncSessionLocal, test_engine  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def push_disabled(monkeypatch):
+    """Keep push off unless a test explicitly turns it on.
+
+    Without this the suite reads whatever FIREBASE_CREDENTIALS_JSON the
+    developer happens to have exported. On a machine configured for real
+    push that meant tests initialized the live SDK, whose synchronous
+    transport then leaked across pytest-asyncio's per-test event loops and
+    failed a dozen unrelated dispatch and WebSocket tests with 'Future
+    attached to a different loop'. A test must not depend on the ambient
+    environment, and must never reach a real Firebase project.
+    """
+    from app.services import push
+
+    monkeypatch.setattr(settings, "FIREBASE_CREDENTIALS_JSON", "", raising=False)
+    push.reset()
+    yield
+    push.reset()
+
+
 async def override_get_async_session() -> AsyncSession:
     async with TestAsyncSessionLocal() as session:
         yield session

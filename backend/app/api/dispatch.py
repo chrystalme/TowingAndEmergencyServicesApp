@@ -177,7 +177,7 @@ async def create_dispatch(
     await session.commit()
 
     # Tell anyone already watching this request that a van was matched.
-    await publish_dispatch_status(dispatch, request, driver_user.email)
+    await publish_dispatch_status(dispatch, request, driver_user.email, session)
 
     return DispatchMatchResponse(
         dispatch=dispatch_to_read(dispatch, driver_user, driver_profile),
@@ -300,7 +300,7 @@ async def advance_dispatch(
 
     driver_user = await session.get(User, dispatch.driver_id)
     await publish_dispatch_status(
-        dispatch, request, driver_user.email if driver_user else None
+        dispatch, request, driver_user.email if driver_user else None, session
     )
     return dispatch_to_read(dispatch, driver_user, driver_profile, request)
 
@@ -336,5 +336,5 @@ async def respond_to_dispatch(
     dispatch.responded_at = __import__("datetime").datetime.utcnow()
     await session.commit()
     await session.refresh(dispatch)
-    await publish_dispatch_status(dispatch, request, user.email)
+    await publish_dispatch_status(dispatch, request, user.email, session)
     return dispatch_to_read(dispatch, user, driver_profile, request)

@@ -261,3 +261,129 @@ async def test_status_changes_reach_the_request_channel(
     # The linked request status travels too, so a client can render it directly.
     assert seen[-1]["request_status"] == "completed"
     assert seen[-1]["driver_email"] == "ws-status@example.com"
+
+
+# --- Device registration and push behaviour ---
+@pytest.mark.asyncio
+async def test_device_registration_round_trip(client: AsyncClient, auth_headers: dict):
+    """Register, re-register the same token, then unregister."""
+    resp = await client.post(
+        "/api/devices", json={"token": "tok-abc-123", "platform": "android"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    assert resp.json()["platform"] == "android"
+
+    # Re-registering the same token updates rather than duplicating: FCM tokens
+    # are re-sent on every launch.
+    again = await client.post(
+        "/api/devices", json={"token": "tok-abc-123", "platform": "android"},
+        headers=auth_headers,
+    )
+    assert again.status_code == 201
+    assert again.json()["id"] == resp.json()["id"]
+
+    gone = await client.request(
+        "DELETE", "/api/devices",
+        json={"token": "tok-abc-123", "platform": "android"},
+        headers=auth_headers,
+    )
+    assert gone.status_code == 204
+
+    # Unregistering something already gone is not an error; sign-out is noisy
+    # enough without a 404.
+    twice = await client.request(
+        "DELETE", "/api/devices",
+        json={"token": "tok-abc-123", "platform": "android"},
+        headers=auth_headers,
+    )
+    assert twice.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_a_phone_handed_to_another_user_is_reclaimed(
+    client: AsyncClient, auth_headers: dict
+):
+    """The same device registering under a new user must move, not duplicate.
+
+    Otherwise the previous owner keeps receiving that phone's job
+    notifications.
+    """
+    await client.post(
+        "/api/devices", json={"token": "shared-phone", "platform": "android"},
+        headers=auth_headers,
+    )
+    second = await _register_and_login(client, "second-owner@example.com")
+    resp = await client.post(
+        "/api/devices", json={"token": "shared-phone", "platform": "android"},
+        headers={"Authorization": second["Authorization"]},
+    )
+    assert resp.status_code == 201
+
+    from sqlalchemy import func, select as _select
+
+    from app.models import DeviceToken
+    from app.tests.testdb import TestAsyncSessionLocal
+
+    async with TestAsyncSessionLocal() as s:
+        count = await s.scalar(
+            _select(func.count()).select_from(DeviceToken).where(
+                DeviceToken.token == "shared-phone"
+            )
+        )
+    assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_push_is_optional(client: AsyncClient, auth_headers: dict, db_session):
+    """With no Firebase credentials the app works and simply skips sending.
+
+    This is what lets the suite and a bare local run work without a Firebase
+    project — and it must never raise into the request that triggered it.
+    """
+    from app.services import push
+
+    assert push.is_enabled() is False
+    sent = await push.send_to_user(db_session, 1, "Title", "Body")
+    assert sent == 0
+
+
+@pytest.mark.asyncio
+async def test_unusable_firebase_credentials_disable_push_instead_of_crashing(
+    db_session, monkeypatch
+):
+    """A malformed credential must degrade to 'push off', not take the API down.
+
+    Push is configured by a single environment variable that is easy to
+    truncate or paste wrong. If that turned into an exception on the first
+    dispatch, a bad copy-paste would stop drivers being assigned at all -
+    so the failure has to stay contained to the notification.
+    """
+    from app.core.settings import settings as live_settings
+    from app.services import push
+
+    monkeypatch.setattr(
+        live_settings, "FIREBASE_CREDENTIALS_JSON", '{"not": "a service account"}'
+    )
+    push.reset()
+
+    assert push.is_enabled() is False
+    assert await push.send_to_user(db_session, 1, "Title", "Body") == 0
+
+
+@pytest.mark.asyncio
+async def test_status_push_is_silent_for_internal_transitions(
+    client: AsyncClient, auth_headers: dict, db_session
+):
+    """A client should not be pinged when a job is re-offered internally."""
+    from app.services import push
+
+    class _D:
+        status = "declined"
+        request_id = 1
+        id = 1
+
+    class _R:
+        user_id = 1
+
+    assert await push.notify_requester_of_status(db_session, _D(), _R()) == 0

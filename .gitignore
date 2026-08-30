@@ -25,3 +25,9 @@ out/
 # Test artifacts
 playwright-report/
 test-results/
+
+# Firebase service-account keys. These grant server-side access to the
+# project; they belong in an environment variable, never in the repo.
+*-firebase-adminsdk-*.json
+**/serviceAccountKey.json
+**/service-account*.json

@@ -31,3 +31,10 @@ test-results/
 *-firebase-adminsdk-*.json
 **/serviceAccountKey.json
 **/service-account*.json
+
+# Android release signing. The keystore IS the app's identity: anyone with it
+# can publish an update that Android trusts as genuine, and losing it means no
+# further updates to an already-published app are possible at all.
+*.jks
+*.keystore
+mobile/android/key.properties

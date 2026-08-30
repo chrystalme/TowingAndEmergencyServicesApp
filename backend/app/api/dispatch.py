@@ -53,6 +53,40 @@ async def nearby_drivers(
     return [_candidate_schema(r) for r in ranked]
 
 
+@router.get("/mine", response_model=List[DispatchRead])
+async def my_dispatches(
+    active_only: bool = Query(True, description="Only jobs still needing the driver"),
+    session: AsyncSession = Depends(get_async_session),
+    user: User = Depends(current_active_user),
+) -> List[DispatchRead]:
+    """Jobs assigned to the calling driver, newest first.
+
+    Without this a driver had no way to discover what they had been matched to:
+    ``/dispatch/{id}/respond`` needs an id, and ``/service-requests/{id}`` is
+    scoped to the requester and admins, so the driver could not read either. The
+    response therefore carries enough of the linked request (location,
+    description, service/vehicle type, coordinates) to accept or decline
+    without a second call.
+    """
+    stmt = (
+        select(Dispatch, ServiceRequest)
+        .join(ServiceRequest, ServiceRequest.id == Dispatch.request_id)
+        .where(Dispatch.driver_id == user.id)
+        .order_by(Dispatch.id.desc())
+    )
+    if active_only:
+        stmt = stmt.where(Dispatch.status.in_(("assigned", "accepted", "enroute", "arrived")))
+
+    rows = (await session.execute(stmt)).all()
+    driver_profile = (
+        await session.execute(select(Driver).where(Driver.user_id == user.id))
+    ).scalar_one_or_none()
+    return [
+        dispatch_to_read(dispatch, user, driver_profile, request)
+        for dispatch, request in rows
+    ]
+
+
 @router.get("/request/{request_id}", response_model=DispatchRead)
 async def get_request_dispatch(
     request_id: int,
@@ -80,7 +114,7 @@ async def get_request_dispatch(
     driver_profile = (
         await session.execute(select(Driver).where(Driver.user_id == dispatch.driver_id))
     ).scalar_one_or_none()
-    return dispatch_to_read(dispatch, driver, driver_profile)
+    return dispatch_to_read(dispatch, driver, driver_profile, request)
 
 
 @router.post("", response_model=DispatchMatchResponse, status_code=status.HTTP_201_CREATED)
@@ -167,4 +201,4 @@ async def respond_to_dispatch(
     dispatch.responded_at = __import__("datetime").datetime.utcnow()
     await session.commit()
     await session.refresh(dispatch)
-    return dispatch_to_read(dispatch, user, driver_profile)
+    return dispatch_to_read(dispatch, user, driver_profile, request)

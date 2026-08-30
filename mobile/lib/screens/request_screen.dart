@@ -413,13 +413,53 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
                     longitude: _longitude,
                   );
                   if (success && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Service requested successfully!'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                    context.go('/dashboard');
+                    // createRequest also matches the nearest driver, so show
+                    // who is coming rather than a bare confirmation. A request
+                    // with no driver available is still a valid request.
+                    final match = provider.lastDispatch;
+                    if (match != null) {
+                      await showDialog<void>(
+                        context: context,
+                        builder: (dialogContext) => AlertDialog(
+                          title: const Row(
+                            children: [
+                              Icon(Icons.check_circle, color: Colors.green),
+                              SizedBox(width: 8),
+                              Text('Driver Dispatched'),
+                            ],
+                          ),
+                          content: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _matchRow('Driver', match['driver_email']),
+                              _matchRow('Distance', match['distance_km'] == null
+                                  ? null
+                                  : '${match['distance_km']} km'),
+                              _matchRow('ETA', match['eta_minutes'] == null
+                                  ? null
+                                  : '~${match['eta_minutes']} min'),
+                              _matchRow('Estimated price', match['price']?.toString()),
+                            ],
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              child: const Text('Done'),
+                            ),
+                          ],
+                        ),
+                      );
+                    } else if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(provider.error ??
+                              'Request filed. No driver available yet.'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    }
+                    if (context.mounted) context.go('/dashboard');
                   }
                 }
               },
@@ -427,6 +467,28 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
           ),
         );
       },
+    );
+  }
+
+  /// One label/value line in the dispatch confirmation.
+  static Widget _matchRow(String label, Object? value) {
+    if (value == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.black54)),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value.toString(),
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -200,6 +200,12 @@ class ApiService {
     });
   }
 
+  // Jobs assigned to the signed-in driver. Without this a driver has no way
+  // to discover what they were matched to: responding needs a dispatch id.
+  Future<List<dynamic>> getMyDispatches({bool activeOnly = true}) async {
+    return (await get('/dispatch/mine?active_only=$activeOnly')) as List<dynamic>;
+  }
+
   Future<dynamic> getMyDriverProfile() async {
     return get('/drivers/me');
   }

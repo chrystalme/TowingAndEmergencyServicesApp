@@ -11,18 +11,31 @@ import 'screens/request_screen.dart';
 import 'screens/request_list_screen.dart';
 import 'screens/driver_console_screen.dart';
 
-void main() {
-  runApp(const TowingEmergencyApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Restore the session BEFORE the first frame. AuthProvider starts logged
+  // out, and the router's redirect reads that flag, so without this a user
+  // with a perfectly good token in secure storage is bounced to /login on
+  // every cold start.
+  final auth = AuthProvider();
+  await auth.checkAuthStatus();
+
+  runApp(TowingEmergencyApp(auth: auth));
 }
 
 class TowingEmergencyApp extends StatelessWidget {
-  const TowingEmergencyApp({super.key});
+  TowingEmergencyApp({super.key, required this.auth})
+      : _router = _createRouter(auth);
+
+  final AuthProvider auth;
+  final GoRouter _router;
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider<AuthProvider>.value(value: auth),
         ChangeNotifierProvider(create: (_) => RequestProvider()),
         ChangeNotifierProvider(create: (_) => DriverProvider()),
       ],
@@ -75,8 +88,11 @@ class TowingEmergencyApp extends StatelessWidget {
   }
 }
 
-final _router = GoRouter(
+GoRouter _createRouter(AuthProvider auth) => GoRouter(
   initialLocation: '/',
+  // Re-run the redirect whenever auth changes, so logging in or out moves
+  // the user without each screen having to navigate by hand.
+  refreshListenable: auth,
   routes: [
     GoRoute(
       path: '/',
@@ -108,17 +124,22 @@ final _router = GoRouter(
     ),
   ],
   redirect: (context, state) {
-    final authProvider = context.read<AuthProvider>();
-    final isLoggedIn = authProvider.isLoggedIn;
-    final isAuthScreen = state.matchedLocation == '/login' || state.matchedLocation == '/register';
+    final isLoggedIn = auth.isLoggedIn;
+    final location = state.matchedLocation;
+    const authScreens = {'/login', '/register'};
+    // '/' is the launch location and renders LoginScreen. It is NOT an auth
+    // screen for the guard below (an unauthenticated visit must still be sent
+    // to /login), but a restored session landing there has to be moved on —
+    // otherwise a logged-in user stares at a login form on every cold start.
+    const landingScreens = {'/', '/login', '/register'};
 
-    // Redirect to login if not authenticated (auth screens are exempt)
-    if (!isLoggedIn && !isAuthScreen) {
+    // Not authenticated: everything except the auth screens goes to /login.
+    if (!isLoggedIn && !authScreens.contains(location)) {
       return '/login';
     }
 
-    // Redirect to dashboard if already logged in and trying to access an auth screen
-    if (isLoggedIn && isAuthScreen) {
+    // Authenticated: never sit on a landing screen.
+    if (isLoggedIn && landingScreens.contains(location)) {
       return '/dashboard';
     }
 

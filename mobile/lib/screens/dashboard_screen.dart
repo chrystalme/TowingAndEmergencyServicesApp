@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/request_provider.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/stat_card.dart';
+import '../services/tracking_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -14,12 +15,108 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
+  /// The request currently being watched over the socket, if any.
+  int? _watching;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<RequestProvider>().fetchRequests();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await context.read<RequestProvider>().fetchRequests();
+      if (mounted) _watchActiveRequest();
     });
+  }
+
+  @override
+  void dispose() {
+    trackingService.stop();
+    super.dispose();
+  }
+
+  /// Subscribe to the newest request that is still in flight.
+  ///
+  /// Without this the client filed a request and then learned nothing: their
+  /// tow could accept, drive over, arrive and finish while the screen still
+  /// said 'pending'. The only way to find out was to reopen the app.
+  void _watchActiveRequest() {
+    final requests = context.read<RequestProvider>().requests;
+    Map<String, dynamic>? active;
+    for (final r in requests) {
+      final row = (r as Map).cast<String, dynamic>();
+      final status = row['status'] as String?;
+      if (status != 'completed' && status != 'cancelled') {
+        active = row;
+        break;
+      }
+    }
+
+    if (active == null) {
+      trackingService.stop();
+      _watching = null;
+      return;
+    }
+
+    final id = active['id'] as int;
+    if (_watching == id) return;
+    _watching = id;
+    trackingService.watch(id, onEvent: _onLiveEvent);
+  }
+
+  void _onLiveEvent(Map<String, dynamic> event) {
+    if (!mounted) return;
+    if (event['type'] != 'dispatch_status') return;
+
+    // Re-read rather than patching local state: the server is the authority
+    // on what a status transition did to the request.
+    context.read<RequestProvider>().fetchRequests();
+
+    final status = (event['status'] ?? '').toString();
+    final message = _statusMessage(status, event['driver_email'] as String?);
+    if (message == null) return;
+
+    final done = status == 'completed';
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Row(
+          children: [
+            Icon(done ? Icons.check_circle : Icons.local_shipping,
+                color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: done ? Colors.green.shade700 : Colors.indigo,
+        duration: const Duration(seconds: 6),
+      ));
+
+    if (done) {
+      // Nothing left in flight on this request; release the socket.
+      trackingService.stop();
+      _watching = null;
+    }
+  }
+
+  static String? _statusMessage(String status, String? driver) {
+    final who = driver ?? 'Your driver';
+    switch (status) {
+      case 'assigned':
+        return '$who has been dispatched to you';
+      case 'accepted':
+        return '$who accepted your request';
+      case 'enroute':
+        return '$who is on the way';
+      case 'arrived':
+        return '$who has arrived';
+      case 'completed':
+        return 'Your request is complete';
+      case 'cancelled':
+        return 'Your request was cancelled';
+      case 'declined':
+        return 'Finding you another driver…';
+      default:
+        return null;
+    }
   }
 
   @override

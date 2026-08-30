@@ -210,3 +210,54 @@ async def test_missing_coordinates_publish_nothing(client: AsyncClient, db_sessi
     drv = await _register_and_login(client, "ws-nocoords@example.com")
     driver = await user_from_token(drv["_raw"], db_session)
     assert await publish_driver_position(db_session, driver.id, None, None) == 0
+
+
+@pytest.mark.asyncio
+async def test_status_changes_reach_the_request_channel(
+    client: AsyncClient, auth_headers: dict, db_session, monkeypatch
+):
+    """A watcher must learn the job was accepted and completed, not just moved.
+
+    The socket originally carried only driver_position, so a client watching a
+    tow saw a dot move but was never told it had accepted, arrived or finished —
+    the events they actually care about.
+    """
+    import asyncio
+
+    import app.api.tracking_ws as tracking
+
+    broker = InProcessBroker()
+    monkeypatch.setattr(tracking, "get_broker", lambda: broker)
+
+    sr_id, drv = await _dispatched_job(
+        client, auth_headers, "ws-status@example.com", 65.0, -95.0
+    )
+
+    seen = []
+    agen = broker.subscribe(channel_for(sr_id))
+
+    async def pump():
+        async for message in agen:
+            seen.append(message)
+            if len(seen) >= 2:
+                return
+
+    task = asyncio.create_task(pump())
+    await asyncio.sleep(0)
+
+    dispatch_id = (await client.get("/api/dispatch/mine", headers=drv)).json()[0]["id"]
+    await client.post(
+        f"/api/dispatch/{dispatch_id}/respond", json={"status": "accepted"}, headers=drv
+    )
+    await client.post(
+        f"/api/dispatch/{dispatch_id}/status", json={"status": "completed"}, headers=drv
+    )
+
+    await asyncio.wait_for(task, timeout=3.0)
+    await agen.aclose()
+
+    assert [e["type"] for e in seen] == ["dispatch_status", "dispatch_status"]
+    assert [e["status"] for e in seen] == ["accepted", "completed"]
+    # The linked request status travels too, so a client can render it directly.
+    assert seen[-1]["request_status"] == "completed"
+    assert seen[-1]["driver_email"] == "ws-status@example.com"

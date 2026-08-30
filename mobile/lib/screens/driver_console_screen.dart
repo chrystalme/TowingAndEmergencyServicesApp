@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/driver_provider.dart';
+import '../utils/money.dart';
 import '../widgets/primary_button.dart';
 
 /// Driver Console — go active with your phone's location, or go offline.
@@ -166,7 +167,7 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
                 if (eta != null)
                   Text('~$eta min', style: const TextStyle(fontSize: 12)),
                 if (price != null)
-                  Text('Price $price',
+                  Text('Price ${formatMoney(price, job['currency'] as String?)}',
                       style: const TextStyle(
                           fontSize: 12, fontWeight: FontWeight.bold)),
               ],

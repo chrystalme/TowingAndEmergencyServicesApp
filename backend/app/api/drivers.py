@@ -1,8 +1,9 @@
 """Driver availability + live position endpoints (REST heartbeat).
 
 Drivers come online, set their position, and flip between available/enroute.
-The WebSocket variant in ``ws.py`` offers the same upsert for streaming updates;
-this REST surface is the canonical, testable path.
+This is the only way position enters the system: the unauthenticated WebSocket
+that once offered the same upsert has been deleted, so every update passes
+through the authentication and role gate below.
 """
 
 from datetime import datetime

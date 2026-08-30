@@ -101,6 +101,25 @@ class EmergencyLog(Base):
     reporter = relationship("User", back_populates="emergency_logs")
 
 
+# ---------- Runtime settings (changeable without a deploy) ----------
+class AppSetting(Base):
+    """A single operational knob, stored so it can change without a release.
+
+    Environment variables cannot serve this purpose on a PaaS: changing one
+    restarts the service. Values here override the env-provided default and
+    take effect on the next read, across every instance.
+    """
+    __tablename__ = "app_settings"
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    updated_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+
+
 # ---------- Driver profile (availability + live position) ----------
 class Driver(Base):
     """Per-driver live state used by the dispatcher to find the nearest driver.
@@ -139,6 +158,13 @@ class Dispatch(Base):
     price: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # When an unanswered offer lapses. Stored rather than derived from
+    # created_at so a driver can extend it and so changing the timeout setting
+    # does not retroactively expire offers already in flight.
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # How many times the driver has bought more time; capped so a request
+    # cannot be held indefinitely while the client waits.
+    extension_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     request = relationship("ServiceRequest", back_populates="dispatches", foreign_keys=[request_id])
     driver = relationship("User", back_populates="dispatches", foreign_keys=[driver_id])

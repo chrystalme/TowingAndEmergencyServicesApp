@@ -436,6 +436,51 @@ check that endpoint rather than assuming.
 
 On Railway, add a Redis service and set `REDIS_URL` to `${{Redis.REDIS_URL}}`
 on the API service.
+## Dispatch offers (timeout, extension, fallback chain)
+
+An offer is made to the nearest available driver and carries a deadline. If
+they never answer, the offer lapses: the driver is released, the request
+returns to `pending`, and the next candidate can be tried. A driver who has
+already declined or lapsed on a request is never offered it again, which is
+what turns the ranked candidate list into a real fallback chain.
+
+Expiry is swept **lazily** — on matching and on reading a driver's job list —
+rather than by a background scheduler. That keeps it deterministic, testable,
+and correct with several API instances. The tradeoff: an offer only lapses
+once something touches those paths. In practice a waiting client is polling,
+so it does.
+
+A driver mid-decision can buy more time with
+`POST /api/dispatch/{id}/extend`. Extensions are capped so a request cannot be
+held open indefinitely while the client waits.
+
+### Changing the timings without a deploy
+
+These are **not** environment variables. Editing an env var on a PaaS restarts
+the service, which defeats the purpose. They live in `app_settings` and are
+changed through the admin API, taking effect on the next read across every
+instance:
+
+| Setting | Default | Range |
+|---|---|---|
+| `dispatch_offer_timeout_seconds` | 120 | 30–900 |
+| `dispatch_offer_extension_seconds` | 60 | 15–600 |
+| `dispatch_offer_max_extensions` | 2 | 0–10 |
+
+```bash
+# read every knob, its effective value, and whether it is overridden
+curl -s $API/api/admin/settings -H "Authorization: Bearer $ADMIN"
+
+# change one, live
+curl -s -X PUT $API/api/admin/settings/dispatch_offer_timeout_seconds \
+  -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
+  -d '{"value": 300}'
+```
+
+Superuser only. Every knob declares bounds, so a typo cannot make offers
+expire instantly or never — out-of-range values are refused with a 422. The
+environment variables (`DISPATCH_OFFER_*`) still exist, but only supply the
+default used when no override row is present.
 ## Testing
 
 ```bash

@@ -69,6 +69,18 @@ async def init_db():
 
 
 @pytest_asyncio.fixture
+async def db_session():
+    """A session on the same in-memory engine the app is using.
+
+    Tests must take this rather than importing TestAsyncSessionLocal directly:
+    pytest loads conftest under its own module name, so a plain import
+    re-executes this file and builds a second, empty database.
+    """
+    async with TestAsyncSessionLocal() as session:
+        yield session
+
+
+@pytest_asyncio.fixture
 async def client():
     app.dependency_overrides[get_async_session] = override_get_async_session
     # Also override auth dependencies

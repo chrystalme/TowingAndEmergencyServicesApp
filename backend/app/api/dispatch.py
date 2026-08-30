@@ -10,6 +10,7 @@ Flow:
    assignment (driver + ETA + price + driver position).
 """
 
+from datetime import datetime, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -27,10 +28,16 @@ from ..services.dispatch import (
     apply_dispatch_status,
     can_transition,
     dispatch_to_read,
+    expire_stale_offers,
     list_available_drivers,
     match_request,
     rank_candidates,
     _candidate_schema,
+)
+from ..services.runtime_settings import (
+    MAX_EXTENSIONS,
+    OFFER_EXTENSION,
+    get_int,
 )
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
@@ -72,6 +79,10 @@ async def my_dispatches(
     description, service/vehicle type, coordinates) to accept or decline
     without a second call.
     """
+    # Lapse anything the driver sat on before showing them the list, so a
+    # stale offer is never presented as still actionable.
+    await expire_stale_offers(session)
+
     stmt = (
         select(Dispatch, ServiceRequest)
         .join(ServiceRequest, ServiceRequest.id == Dispatch.request_id)
@@ -128,6 +139,11 @@ async def create_dispatch(
     user: User = Depends(current_active_user),
 ) -> DispatchMatchResponse:
     """Match the nearest available driver to a pending request (idempotently)."""
+    # An offer that has run out must lapse before we decide anything: it
+    # frees the held driver and returns the request to 'pending', which is
+    # what makes re-dispatch possible at all.
+    await expire_stale_offers(session)
+
     request = await session.get(ServiceRequest, data.request_id)
     if not request or request.user_id != user.id:
         raise HTTPException(status_code=404, detail="Service request not found")
@@ -166,8 +182,64 @@ async def create_dispatch(
     )
 
 
+class ExtendIn(BaseModel):
+    seconds: int | None = None  # defaults to the configured extension
+
+
 class StatusIn(BaseModel):
     status: str  # enroute | arrived | completed | cancelled
+
+
+@router.post("/{dispatch_id}/extend", response_model=DispatchRead)
+async def extend_offer(
+    dispatch_id: int,
+    data: ExtendIn,
+    session: AsyncSession = Depends(get_async_session),
+    user: User = Depends(current_active_user),
+) -> DispatchRead:
+    """Buy the assigned driver more time before their offer lapses.
+
+    A driver who is mid-decision should not lose the job to a timer, but a
+    client should not wait forever either — so extensions are capped, and
+    both the cap and the amount of time granted are runtime settings.
+    """
+    dispatch = await session.get(Dispatch, dispatch_id)
+    if not dispatch:
+        raise HTTPException(status_code=404, detail="Dispatch not found")
+    if dispatch.driver_id != user.id:
+        raise HTTPException(status_code=403, detail="Not your dispatch to extend")
+    if dispatch.status != "assigned":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only an unanswered offer can be extended (this one is '{dispatch.status}')",
+        )
+
+    max_extensions = await get_int(session, MAX_EXTENSIONS)
+    if dispatch.extension_count >= max_extensions:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This offer has already been extended {dispatch.extension_count} time(s); the limit is {max_extensions}",
+        )
+
+    granted = data.seconds or await get_int(session, OFFER_EXTENSION)
+    try:
+        granted = OFFER_EXTENSION.clamp_or_raise(int(granted))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    # Extend from now rather than from the old deadline: a driver who taps
+    # extend with two seconds left should get the full window.
+    base = max(dispatch.expires_at or datetime.utcnow(), datetime.utcnow())
+    dispatch.expires_at = base + timedelta(seconds=granted)
+    dispatch.extension_count += 1
+    await session.commit()
+    await session.refresh(dispatch)
+
+    request = await session.get(ServiceRequest, dispatch.request_id)
+    driver_profile = (
+        await session.execute(select(Driver).where(Driver.user_id == user.id))
+    ).scalar_one_or_none()
+    return dispatch_to_read(dispatch, user, driver_profile, request)
 
 
 @router.post("/{dispatch_id}/status", response_model=DispatchRead)

@@ -1,5 +1,8 @@
 fastapi==0.115.0
-uvicorn==0.30.6
+# The websockets extra is REQUIRED, not optional: bare uvicorn ships no
+# WebSocket protocol implementation, logs 'Unsupported upgrade request', and
+# answers every handshake with 404 - including a perfectly valid one.
+uvicorn[standard]==0.30.6
 sqlalchemy[asyncio]==2.0.35
 asyncpg==0.29.0
 alembic==1.13.2

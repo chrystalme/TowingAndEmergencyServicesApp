@@ -18,11 +18,16 @@ from .devices import router as devices_router
 from .admin_settings import router as admin_settings_router
 from .admin_users import router as admin_users_router
 
-# NOTE: `.ws` is intentionally NOT imported/mounted. The driver position stream
-# accepted a user_id straight from the URL path with no authentication, so any
-# caller could move any driver or pull them out of the dispatch pool. No client
-# uses it (web and mobile both post position via PUT /api/drivers/me), so it is
-# pure attack surface. See app/api/ws.py before re-enabling it.
+# NOTE: there is no driver-position WebSocket. app/api/ws.py used to hold one,
+# left unmounted because it took a user_id straight from the URL path with no
+# authentication: any caller could move any driver, pull one out of the
+# dispatch pool, or - since it set `user.role = "driver"` - promote an account
+# straight past the administrator approval that gates driving.
+#
+# It has now been deleted rather than left dormant. Unmounting made it
+# unreachable, but a file that only needs one import line to become live is a
+# standing invitation to whoever next needs a position stream. Clients post
+# position over PUT /api/drivers/me, which is authenticated and role-gated.
 
 router = APIRouter()
 

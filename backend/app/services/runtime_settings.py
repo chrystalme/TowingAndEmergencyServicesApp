@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.settings import settings
 from ..models import AppSetting
+from . import pricing
 
 
 @dataclass(frozen=True)
@@ -72,8 +73,58 @@ MAX_EXTENSIONS = IntSetting(
     description="How many times a driver may extend a single offer.",
 )
 
+# ---------- Rate card ----------
+#
+# Prices are whole naira. They live here rather than as constants because
+# fuel costs in Nigeria move, and a rate card that can only change by
+# rebuilding and redeploying an image goes stale - which is the same
+# argument that put the dispatch timings here.
+#
+# The bounds are deliberately wide enough for real repricing but tight
+# enough that a slipped digit cannot quote someone N1.5m for a tow.
+
+PRICE_BASE_KNOBS: dict[str, IntSetting] = {
+    service_type: IntSetting(
+        key=f"price_base_ngn_{service_type}",
+        default=pricing.DEFAULT_BASE_NGN[service_type],
+        minimum=0,
+        maximum=1_000_000,
+        description=f"Callout/base fee in naira for a {service_type} job.",
+    )
+    for service_type in pricing.SERVICE_TYPES
+}
+
+PRICE_PER_KM_KNOBS: dict[str, IntSetting] = {
+    service_type: IntSetting(
+        key=f"price_per_km_ngn_{service_type}",
+        default=pricing.DEFAULT_PER_KM_NGN[service_type],
+        minimum=0,
+        maximum=100_000,
+        description=f"Per-kilometre rate in naira for a {service_type} job.",
+    )
+    for service_type in pricing.SERVICE_TYPES
+}
+
+# Floor under every quote: below this a job is not worth sending a truck to.
+MINIMUM_FARE = IntSetting(
+    key="price_minimum_fare_ngn",
+    default=pricing.DEFAULT_MINIMUM_FARE_NGN,
+    minimum=0,
+    maximum=1_000_000,
+    description="Lowest quote in naira that any job may be priced at.",
+)
+
+
 KNOBS: dict[str, IntSetting] = {
-    knob.key: knob for knob in (OFFER_TIMEOUT, OFFER_EXTENSION, MAX_EXTENSIONS)
+    knob.key: knob
+    for knob in (
+        OFFER_TIMEOUT,
+        OFFER_EXTENSION,
+        MAX_EXTENSIONS,
+        MINIMUM_FARE,
+        *PRICE_BASE_KNOBS.values(),
+        *PRICE_PER_KM_KNOBS.values(),
+    )
 }
 
 

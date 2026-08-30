@@ -6,6 +6,7 @@ import '../providers/request_provider.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/stat_card.dart';
 import '../services/tracking_service.dart';
+import '../widgets/driver_contact_card.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -376,6 +377,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ],
             ),
+            // Only rendered once the driver has accepted; the API withholds
+            // these fields until then.
+            DriverContactCard(request: request),
           ],
         ),
         trailing: Container(

@@ -194,6 +194,7 @@ async def seed() -> None:
                 user_id=created_users["dan@towassist.com"].id,
                 is_online=True,
                 current_status="available",
+                phone_number="+2348031234567",
                 current_lat=6.4550,   # Apapa
                 current_lng=3.3841,
                 last_position_at=datetime.utcnow(),
@@ -202,6 +203,7 @@ async def seed() -> None:
                 user_id=created_users["mercy@towassist.com"].id,
                 is_online=True,
                 current_status="available",
+                phone_number="+2348059876543",
                 current_lat=6.6018,   # Ikeja
                 current_lng=3.3515,
                 last_position_at=datetime.utcnow(),
@@ -236,9 +238,35 @@ async def seed() -> None:
                     year=2018,
                     plate_number="APP-305-XA",
                 ),
+                Vehicle(
+                    owner_id=created_users["mercy@towassist.com"].id,
+                    make="Mitsubishi",
+                    model="Canter Flatbed",
+                    year=2020,
+                    plate_number="KJA-914-LA",
+                ),
             ]
             session.add_all(vehicles)
             await session.flush()
+
+        # Point each driver at the truck they operate. Without this the
+        # client sees a phone number but no way to recognise the vehicle
+        # pulling up, which is half the point of showing the details.
+        for driver_email, plate in (
+            ("dan@towassist.com", "APP-305-XA"),
+            ("mercy@towassist.com", "KJA-914-LA"),
+        ):
+            profile = await session.scalar(
+                select(Driver).where(
+                    Driver.user_id == created_users[driver_email].id
+                )
+            )
+            truck = await session.scalar(
+                select(Vehicle).where(Vehicle.plate_number == plate)
+            )
+            if profile is not None and truck is not None:
+                profile.vehicle_id = truck.id
+        await session.flush()
 
         # ------------------------------------------------------------- service requests
         if await session.scalar(select(ServiceRequest.id).limit(1)) is None:
@@ -306,8 +334,8 @@ async def seed() -> None:
                     status="accepted",
                     distance_km=seeded_distance_km,
                     eta_minutes=9.0,
-                    price=calculate_price(
-                        "roadside", "suv", seeded_distance_km
+                    price=await calculate_price(
+                        session, "roadside", "suv", seeded_distance_km
                     ),
                     created_at=now - timedelta(minutes=28),
                     responded_at=now - timedelta(minutes=25),

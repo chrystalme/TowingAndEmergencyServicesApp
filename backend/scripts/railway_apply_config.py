@@ -3,22 +3,30 @@
 
 Why this exists
 ---------------
-``backend/railway.json`` declares a ``preDeployCommand`` so migrations run as a
-gated step before each release. That file is **not applied for CLI deploys**
-(``railway up``): a service deployed that way comes up healthy with an
-unmigrated database, and every endpoint returns 500 until something runs
-alembic. Verified on a real deploy.
+``backend/deploy-settings.json`` declares a ``preDeployCommand`` so migrations
+run as a gated step before each release. Railway cannot apply it on its own:
 
-The Infrastructure-as-Code format cannot express it either — ``railway config
-migrate`` emits ``preDeployCommand`` as an inert comment, and ``railway config
-pull`` does not return it even when it is set and running. So the setting lives
-on the Railway service itself, which makes it click-ops that no fresh service or
-new environment inherits.
+* Config as Code (``railway.json``) is **not applied for CLI deploys**
+  (``railway up``): a service deployed that way comes up healthy with an
+  unmigrated database, and every endpoint returns 500 until something runs
+  alembic. Verified on a real deploy.
+* The replacement Infrastructure-as-Code format cannot express it either -
+  ``railway config migrate`` emits ``preDeployCommand`` as an inert *comment*,
+  and ``railway config pull`` does not return it even when it is set and
+  running.
 
-This script closes that gap: it applies the settings from railway.json to a
-named service through Railway's API, so the configuration is reproducible from
-the repository instead of remembered.
+So the setting has to live on the Railway service, which would otherwise be
+click-ops that no fresh service or new environment inherits.
 
+This script closes that gap: it applies the settings from
+``deploy-settings.json`` to a named service through Railway's API, so the
+configuration is reproducible from the repository instead of remembered.
+
+The file is deliberately **not** named ``railway.json``. Under that name
+Railway scans it, warns that Config as Code is deprecated (it stops working
+2026-12-01), and implies the settings are being applied when for CLI deploys
+they are not. Renaming it removes a misleading source of truth without losing
+anything: this script, not the file's name, is what applies them.
 Usage (from backend/, with the Railway CLI linked to a project)::
 
     railway link -p <project> -e <environment>
@@ -36,7 +44,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-RAILWAY_JSON = Path(__file__).resolve().parent.parent / "railway.json"
+SETTINGS_FILE = Path(__file__).resolve().parent.parent / "deploy-settings.json"
 
 # Railway's ServiceInstanceUpdateInput.preDeployCommand is [String!], but it
 # wants the whole command as ONE element. Passing argv-style
@@ -100,15 +108,15 @@ def _find_ids(cli: str, service_name: str) -> tuple[str, str]:
     return service_id, env_id
 
 
-def _fields_from_railway_json() -> str:
-    if not RAILWAY_JSON.is_file():
-        sys.exit(f"{RAILWAY_JSON} not found")
-    deploy = json.loads(RAILWAY_JSON.read_text(encoding="utf-8")).get("deploy", {})
+def _fields_from_settings_file() -> str:
+    if not SETTINGS_FILE.is_file():
+        sys.exit(f"{SETTINGS_FILE} not found")
+    deploy = json.loads(SETTINGS_FILE.read_text(encoding="utf-8")).get("deploy", {})
 
     parts = []
     pre = deploy.get("preDeployCommand")
     if pre:
-        # Accept a string or a list in railway.json; always send one element.
+        # Accept a string or a list in the settings file; always send one element.
         command = pre if isinstance(pre, str) else " ".join(pre)
         parts.append(f"preDeployCommand: [{json.dumps(command)}]")
     if deploy.get("healthcheckPath"):
@@ -117,7 +125,7 @@ def _fields_from_railway_json() -> str:
         parts.append(f"healthcheckTimeout: {int(deploy['healthcheckTimeout'])}")
 
     if not parts:
-        sys.exit("nothing to apply — railway.json has no deploy settings")
+        sys.exit("nothing to apply — deploy-settings.json has no deploy settings")
     return ", ".join(parts)
 
 
@@ -128,7 +136,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cli = _require_cli()
-    fields = _fields_from_railway_json()
+    fields = _fields_from_settings_file()
     service_id, environment_id = _find_ids(cli, args.service)
     mutation = MUTATION.format(service_id=service_id, environment_id=environment_id, fields=fields)
 

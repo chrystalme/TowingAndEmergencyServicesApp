@@ -85,6 +85,14 @@ class ServiceRequestRead(ServiceRequestBase):
     driver_email: Optional[str] = None
     driver_lat: Optional[float] = None
     driver_lng: Optional[float] = None
+    # Same disclosure rule as DispatchRead: only once the job is accepted.
+    # Carried here too because this - not the dispatch - is the view a
+    # client actually sits on while they wait, so it is where they need to
+    # be able to call the driver and recognise the truck.
+    driver_phone: Optional[str] = None
+    driver_vehicle_make: Optional[str] = None
+    driver_vehicle_model: Optional[str] = None
+    driver_vehicle_plate: Optional[str] = None
     price: Optional[float] = None
     distance_km: Optional[float] = None
     eta_minutes: Optional[float] = None
@@ -145,6 +153,18 @@ class DispatchRead(BaseModel):
     driver_email: Optional[str] = None
     driver_lat: Optional[float] = None
     driver_lng: Optional[float] = None
+    # Contact number and truck details for the assigned driver.
+    #
+    # Deliberately withheld until the job is ACCEPTED. At offer time the
+    # driver has not agreed to anything, and an offer that lapses or is
+    # declined would otherwise have leaked their number to someone they
+    # never took a job for. Gating it here also leaves the obvious seam for
+    # the planned tiering, where a free account sees a limited number of
+    # numbers before subscribing.
+    driver_phone: Optional[str] = None
+    driver_vehicle_make: Optional[str] = None
+    driver_vehicle_model: Optional[str] = None
+    driver_vehicle_plate: Optional[str] = None
     # Enough of the linked request for a driver to judge a job without a second
     # round-trip (the driver cannot read /service-requests/{id} — it is scoped
     # to the requester and admins).

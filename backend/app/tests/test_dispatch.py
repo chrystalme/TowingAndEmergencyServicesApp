@@ -914,3 +914,180 @@ async def test_unknown_role_is_rejected(client: AsyncClient, admin_factory):
     )
     assert resp.status_code == 422
     assert "Unknown role" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_driver_contact_is_hidden_until_the_job_is_accepted(
+    client: AsyncClient, auth_headers: dict
+):
+    """A driver who has not accepted has agreed to nothing.
+
+    An offer can lapse or be declined, and disclosing the number at offer
+    time would leak it to a client whose job that driver never took. This
+    is also the seam the planned free/paid tiering hangs off.
+    """
+    from sqlalchemy import select
+
+    from app.models import Driver, Vehicle
+    from app.tests.testdb import TestAsyncSessionLocal
+
+    drv = await _register_and_login(client, "contactable@example.com")
+    await _go_online(client, drv, 6.4550, 3.3841)
+
+    # Give the driver a number and a truck to disclose.
+    async with TestAsyncSessionLocal() as session:
+        profile = await session.scalar(select(Driver).order_by(Driver.id.desc()))
+        truck = Vehicle(
+            owner_id=profile.user_id,
+            make="Isuzu",
+            model="NPR Tow Truck",
+            year=2018,
+            plate_number="APP-305-XA",
+        )
+        session.add(truck)
+        await session.flush()
+        profile.phone_number = "+2348031234567"
+        profile.vehicle_id = truck.id
+        await session.commit()
+
+    req = await client.post(
+        "/api/service-requests",
+        json={
+            "description": "Gearbox failure on Third Mainland Bridge",
+            "location": "Third Mainland Bridge, Lagos",
+            "latitude": 6.4881,
+            "longitude": 3.3841,
+        },
+        headers=auth_headers,
+    )
+    sr_id = req.json()["id"]
+    match = await client.post(
+        "/api/dispatch", json={"request_id": sr_id}, headers=auth_headers
+    )
+    offered = match.json()["dispatch"]
+    dispatch_id = offered["id"]
+
+    # Offered, not accepted: nothing disclosed.
+    assert offered["status"] == "assigned"
+    assert offered["driver_phone"] is None
+    assert offered["driver_vehicle_plate"] is None
+
+    accepted = await client.post(
+        f"/api/dispatch/{dispatch_id}/respond",
+        json={"status": "accepted"},
+        headers=drv,
+    )
+    assert accepted.status_code == 200
+    body = accepted.json()
+    assert body["driver_phone"] == "+2348031234567"
+    assert body["driver_vehicle_make"] == "Isuzu"
+    assert body["driver_vehicle_plate"] == "APP-305-XA"
+
+
+@pytest.mark.asyncio
+async def test_declined_offer_never_discloses_the_number(
+    client: AsyncClient, auth_headers: dict
+):
+    """The case the gate exists for: a driver who said no."""
+    from sqlalchemy import select
+
+    from app.models import Driver
+    from app.tests.testdb import TestAsyncSessionLocal
+
+    drv = await _register_and_login(client, "declines@example.com")
+    await _go_online(client, drv, 6.4550, 3.3841)
+    async with TestAsyncSessionLocal() as session:
+        profile = await session.scalar(select(Driver).order_by(Driver.id.desc()))
+        profile.phone_number = "+2348050000000"
+        await session.commit()
+
+    req = await client.post(
+        "/api/service-requests",
+        json={
+            "description": "Flat tyre",
+            "location": "Lekki-Epe Expressway, Lagos",
+            "latitude": 6.4698,
+            "longitude": 3.5852,
+        },
+        headers=auth_headers,
+    )
+    match = await client.post(
+        "/api/dispatch", json={"request_id": req.json()["id"]}, headers=auth_headers
+    )
+    dispatch_id = match.json()["dispatch"]["id"]
+
+    declined = await client.post(
+        f"/api/dispatch/{dispatch_id}/respond",
+        json={"status": "declined"},
+        headers=drv,
+    )
+    assert declined.status_code == 200
+    assert declined.json()["driver_phone"] is None
+
+@pytest.mark.asyncio
+async def test_request_view_discloses_contact_on_the_same_terms(
+    client: AsyncClient, auth_headers: dict
+):
+    """The client sits on their request, not on the dispatch.
+
+    So the request view has to carry the same details under the same rule -
+    otherwise a client with an accepted job still has no way to call the
+    driver, which is the whole point of showing it.
+    """
+    from sqlalchemy import select
+
+    from app.models import Driver, Vehicle
+    from app.tests.testdb import TestAsyncSessionLocal
+
+    drv = await _register_and_login(client, "reachable@example.com")
+    await _go_online(client, drv, 6.4550, 3.3841)
+    async with TestAsyncSessionLocal() as session:
+        profile = await session.scalar(select(Driver).order_by(Driver.id.desc()))
+        truck = Vehicle(
+            owner_id=profile.user_id,
+            make="Mitsubishi",
+            model="Canter Flatbed",
+            year=2020,
+            plate_number="KJA-914-LA",
+        )
+        session.add(truck)
+        await session.flush()
+        profile.phone_number = "+2348059876543"
+        profile.vehicle_id = truck.id
+        await session.commit()
+
+    req = await client.post(
+        "/api/service-requests",
+        json={
+            "description": "Overheating",
+            "location": "Ikoyi, Lagos",
+            "latitude": 6.4550,
+            "longitude": 3.4350,
+        },
+        headers=auth_headers,
+    )
+    sr_id = req.json()["id"]
+    match = await client.post(
+        "/api/dispatch", json={"request_id": sr_id}, headers=auth_headers
+    )
+    dispatch_id = match.json()["dispatch"]["id"]
+
+    # While the offer is outstanding the request must not carry the number.
+    pending = await client.get(
+        f"/api/service-requests/{sr_id}", headers=auth_headers
+    )
+    assert pending.json()["driver_phone"] is None
+
+    await client.post(
+        f"/api/dispatch/{dispatch_id}/respond",
+        json={"status": "accepted"},
+        headers=drv,
+    )
+
+    accepted = await client.get(
+        f"/api/service-requests/{sr_id}", headers=auth_headers
+    )
+    body = accepted.json()
+    assert body["driver_phone"] == "+2348059876543"
+    assert body["driver_vehicle_plate"] == "KJA-914-LA"
+    assert body["driver_vehicle_model"] == "Canter Flatbed"

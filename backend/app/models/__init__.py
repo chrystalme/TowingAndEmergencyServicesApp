@@ -157,8 +157,20 @@ class Driver(Base):
     current_lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     current_lng: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     last_position_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # How the client reaches this driver once a job is under way. Held on the
+    # driver profile rather than the user, because it is the operating
+    # number for the truck, not a personal account detail - and because it
+    # is only ever disclosed for an accepted job (see DispatchRead).
+    phone_number: Mapped[str] = mapped_column(String, default="", nullable=False)
+    # The truck this driver is operating, so a client waiting at the roadside
+    # knows what to look for. Nullable: a driver can be registered before a
+    # vehicle is assigned to them.
+    vehicle_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("vehicles.id"), nullable=True
+    )
 
     user = relationship("User", back_populates="driver_profile", foreign_keys=[user_id])
+    vehicle = relationship("Vehicle", foreign_keys=[vehicle_id])
 
 
 # ---------- Dispatch (an assignment of a driver to a request) ----------

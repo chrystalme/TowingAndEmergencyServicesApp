@@ -1,4 +1,4 @@
-package com.example.towing_emergency
+package ng.towassist.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -20,6 +20,9 @@ dependencies:
   intl: ^0.20.3
   firebase_core: ^4.14.0
   firebase_messaging: ^16.6.0
+  # Tap-to-call the assigned driver. Showing a number that has to be
+  # retyped is no use to someone stood on the hard shoulder.
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:

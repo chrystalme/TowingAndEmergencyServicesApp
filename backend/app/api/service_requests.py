@@ -14,8 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from ..core.auth import current_active_user
+from ..services.dispatch import CONTACT_VISIBLE_STATES
 from ..core.database import get_async_session
-from ..models import Dispatch, Driver, ServiceRequest, User
+from ..models import Dispatch, Driver, ServiceRequest, User, Vehicle
 from ..schemas import ServiceRequestCreate, ServiceRequestRead, ServiceRequestUpdate
 
 router = APIRouter(prefix="/service-requests", tags=["service-requests"])
@@ -23,6 +24,9 @@ router = APIRouter(prefix="/service-requests", tags=["service-requests"])
 # Joined aliases so we can pull requester + driver + dispatch in one query.
 Requester = aliased(User)
 DriverUser = aliased(User)
+# The truck the assigned driver is operating, joined so the list endpoint
+# does not fire an extra query per row.
+DriverVehicle = aliased(Vehicle)
 
 
 def _is_admin(user: User) -> bool:
@@ -35,6 +39,7 @@ def _compose_read(
     dispatch: Optional[Dispatch] = None,
     driver_user: Optional[User] = None,
     driver_profile: Optional[Driver] = None,
+    driver_vehicle: Optional[Vehicle] = None,
 ) -> ServiceRequestRead:
     """Serialize a ServiceRequest with optional requester/dispatch enrichment."""
     read = ServiceRequestRead.model_validate(sr)
@@ -51,6 +56,15 @@ def _compose_read(
         if driver_profile is not None:
             read.driver_lat = driver_profile.current_lat
             read.driver_lng = driver_profile.current_lng
+        # Contact details follow the same rule as DispatchRead: an offer
+        # that is still pending, or that lapsed, must not leak the number.
+        if dispatch.status in CONTACT_VISIBLE_STATES:
+            if driver_profile is not None:
+                read.driver_phone = driver_profile.phone_number or None
+            if driver_vehicle is not None:
+                read.driver_vehicle_make = driver_vehicle.make
+                read.driver_vehicle_model = driver_vehicle.model
+                read.driver_vehicle_plate = driver_vehicle.plate_number
     return read
 
 
@@ -76,12 +90,16 @@ def _enriched_select():
         .subquery()
     )
     return (
-        select(ServiceRequest, Requester, Dispatch, DriverUser, Driver)
+        select(ServiceRequest, Requester, Dispatch, DriverUser, Driver, DriverVehicle)
         .outerjoin(Requester, Requester.id == ServiceRequest.user_id)
         .outerjoin(latest, latest.c.request_id == ServiceRequest.id)
         .outerjoin(Dispatch, Dispatch.id == latest.c.dispatch_id)
         .outerjoin(DriverUser, DriverUser.id == Dispatch.driver_id)
         .outerjoin(Driver, Driver.user_id == Dispatch.driver_id)
+        # Joined rather than lazy-loaded: the list endpoint would otherwise
+        # fire one extra query per row, and lazy loading is not available
+        # on an async session anyway.
+        .outerjoin(DriverVehicle, DriverVehicle.id == Driver.vehicle_id)
     )
 
 

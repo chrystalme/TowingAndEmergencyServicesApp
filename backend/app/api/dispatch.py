@@ -27,7 +27,7 @@ from ..services.dispatch import (
     DISPATCH_TRANSITIONS,
     apply_dispatch_status,
     can_transition,
-    dispatch_to_read,
+    dispatch_read_with_contact,
     expire_stale_offers,
     list_available_drivers,
     match_request,
@@ -98,7 +98,7 @@ async def my_dispatches(
         await session.execute(select(Driver).where(Driver.user_id == user.id))
     ).scalar_one_or_none()
     return [
-        dispatch_to_read(dispatch, user, driver_profile, request)
+        await dispatch_read_with_contact(session, dispatch, user, driver_profile, request)
         for dispatch, request in rows
     ]
 
@@ -130,7 +130,7 @@ async def get_request_dispatch(
     driver_profile = (
         await session.execute(select(Driver).where(Driver.user_id == dispatch.driver_id))
     ).scalar_one_or_none()
-    return dispatch_to_read(dispatch, driver, driver_profile, request)
+    return await dispatch_read_with_contact(session, dispatch, driver, driver_profile, request)
 
 
 @router.post("", response_model=DispatchMatchResponse, status_code=status.HTTP_201_CREATED)
@@ -180,7 +180,7 @@ async def create_dispatch(
     await publish_dispatch_status(dispatch, request, driver_user.email, session)
 
     return DispatchMatchResponse(
-        dispatch=dispatch_to_read(dispatch, driver_user, driver_profile),
+        dispatch=await dispatch_read_with_contact(session, dispatch, driver_user, driver_profile),
         request_status=request.status,
         candidates=candidates,
     )
@@ -243,7 +243,7 @@ async def extend_offer(
     driver_profile = (
         await session.execute(select(Driver).where(Driver.user_id == user.id))
     ).scalar_one_or_none()
-    return dispatch_to_read(dispatch, user, driver_profile, request)
+    return await dispatch_read_with_contact(session, dispatch, user, driver_profile, request)
 
 
 @router.post("/{dispatch_id}/status", response_model=DispatchRead)
@@ -302,7 +302,7 @@ async def advance_dispatch(
     await publish_dispatch_status(
         dispatch, request, driver_user.email if driver_user else None, session
     )
-    return dispatch_to_read(dispatch, driver_user, driver_profile, request)
+    return await dispatch_read_with_contact(session, dispatch, driver_user, driver_profile, request)
 
 
 @router.post("/{dispatch_id}/respond", response_model=DispatchRead)
@@ -337,4 +337,4 @@ async def respond_to_dispatch(
     await session.commit()
     await session.refresh(dispatch)
     await publish_dispatch_status(dispatch, request, user.email, session)
-    return dispatch_to_read(dispatch, user, driver_profile, request)
+    return await dispatch_read_with_contact(session, dispatch, user, driver_profile, request)

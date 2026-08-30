@@ -333,7 +333,8 @@ The backend is deploy-ready; the web app is not (see the Quick start note).
 1. A new project, then **+ New > Database > Add PostgreSQL**.
 2. **+ New > GitHub Repo**, pointed at this repository.
 3. On that service: **Settings > Root Directory = `backend`**. Railway then
-   reads `backend/railway.json` and builds `backend/Dockerfile`.
+   builds `backend/Dockerfile`. Deploy settings come from
+   `backend/deploy-settings.json` via the script below, not automatically.
 
 **Variables to set on the API service**
 
@@ -354,20 +355,28 @@ does not bill egress.
   asyncpg rejects on the first query. `settings.py` normalizes both, so the
   platform's `DATABASE_URL` can be referenced verbatim.
 - *Port.* The image binds `$PORT` (falling back to 8000 locally).
-- *Migrations.* `railway.json` declares a pre-deploy command of
+- *Migrations.* `backend/deploy-settings.json` declares a pre-deploy command of
   `python -m alembic upgrade head`, so migrations are a discrete step that must
   succeed before the new release goes live — never a race between replicas.
-  **But see the warning below: that file is not applied for CLI deploys.**
+  **But see the warning below: Railway does not apply that file itself.**
 - *Demo data.* `app/seed.py` cannot run: `ALLOW_DEMO_SEED` is set only in
   `docker-compose.yml`, so the deployed image has no path to it.
 
-**railway.json is not enough on its own**
+**Deploy settings are not applied automatically**
 
-`railway.json` is *not* applied when you deploy with `railway up`. A service
+Config as Code (`railway.json`) is *not* applied when you deploy with
+`railway up`, and it is deprecated outright from **2026-12-01**. A service
 deployed that way starts healthy against an unmigrated database, and every
 endpoint returns 500 until something runs alembic — the health check passes
 because `/health` never touches the database. This was confirmed on a real
 deploy, not inferred.
+
+The file is deliberately **not** named `railway.json`. Under that name Railway
+scans it, warns on every CLI command that Config as Code is deprecated, and
+implies the settings are being applied when for CLI deploys they are not.
+Renaming it to `deploy-settings.json` removes a misleading source of truth and
+the warning with it; nothing is lost, because the apply script - not the
+file's name - is what puts these settings on the service.
 
 The Infrastructure-as-Code format cannot express it either: `railway config
 migrate` emits `preDeployCommand` as an inert comment, and `railway config
@@ -399,7 +408,8 @@ railway run -s <api-service> \
   python -m app.create_admin
 ```
 
-If `railway.json` and the dashboard ever disagree, the dashboard wins — the
+If `deploy-settings.json` and the dashboard ever disagree, the dashboard wins
+— the
 same three settings (pre-deploy command, health check path, start command)
 can be set under **Settings > Deploy**.
 

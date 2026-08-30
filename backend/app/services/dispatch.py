@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Dispatch, Driver, ServiceRequest, User
+from ..models import Dispatch, Driver, ServiceRequest, User, Vehicle
 from ..schemas import DispatchRead, DriverCandidate
 from .geo import eta_minutes, haversine_km
 from .pricing import CURRENCY, calculate_price
@@ -130,13 +130,24 @@ def _candidate_schema(scored) -> DriverCandidate:
     )
 
 
+# Once a driver has taken the job, the client needs to be able to reach them
+# and to recognise the truck. Before that, they have agreed to nothing.
+CONTACT_VISIBLE_STATES = ("accepted", "enroute", "arrived", "completed")
+
+
 def dispatch_to_read(
     dispatch: Dispatch,
     driver: User = None,
     driver_profile: Driver = None,
     request: ServiceRequest = None,
+    vehicle: 'Vehicle' = None,
 ) -> DispatchRead:
-    """Serialize a Dispatch, denormalizing driver and request display fields."""
+    """Serialize a Dispatch, denormalizing driver and request display fields.
+
+    Driver contact details are included only once the job has been accepted;
+    see DispatchRead for why.
+    """
+    disclose_contact = dispatch.status in CONTACT_VISIBLE_STATES
     return DispatchRead(
         id=dispatch.id,
         request_id=dispatch.request_id,
@@ -154,6 +165,16 @@ def dispatch_to_read(
         driver_email=(driver.email if driver else None),
         driver_lat=(driver_profile.current_lat if driver_profile else None),
         driver_lng=(driver_profile.current_lng if driver_profile else None),
+        driver_phone=(
+            (driver_profile.phone_number or None)
+            if (disclose_contact and driver_profile)
+            else None
+        ),
+        driver_vehicle_make=(vehicle.make if (disclose_contact and vehicle) else None),
+        driver_vehicle_model=(vehicle.model if (disclose_contact and vehicle) else None),
+        driver_vehicle_plate=(
+            vehicle.plate_number if (disclose_contact and vehicle) else None
+        ),
         request_location=(request.location if request else None),
         request_description=(request.description if request else None),
         request_service_type=(request.service_type if request else None),
@@ -161,6 +182,28 @@ def dispatch_to_read(
         request_lat=(request.latitude if request else None),
         request_lng=(request.longitude if request else None),
     )
+
+
+async def dispatch_read_with_contact(
+    session: AsyncSession,
+    dispatch: Dispatch,
+    driver: User = None,
+    driver_profile: Driver = None,
+    request: ServiceRequest = None,
+) -> DispatchRead:
+    """dispatch_to_read, loading the truck when its details will be shown.
+
+    The vehicle is only fetched for a job that has actually been accepted,
+    so an offer - by far the more frequent read - costs no extra query.
+    """
+    vehicle = None
+    if (
+        dispatch.status in CONTACT_VISIBLE_STATES
+        and driver_profile is not None
+        and driver_profile.vehicle_id is not None
+    ):
+        vehicle = await session.get(Vehicle, driver_profile.vehicle_id)
+    return dispatch_to_read(dispatch, driver, driver_profile, request, vehicle)
 
 
 async def expire_stale_offers(session: AsyncSession) -> list[Dispatch]:
@@ -261,7 +304,11 @@ async def match_request(session: AsyncSession, request: ServiceRequest):
     top = ranked[0]
     driver_row, driver_user = top["driver"], top["user"]
 
-    price = calculate_price(request.service_type, request.vehicle_type, top["distance_km"])
+    # Priced against the live rate card, so an admin repricing takes effect
+    # on the next quote rather than the next deploy.
+    price = await calculate_price(
+        session, request.service_type, request.vehicle_type, top["distance_km"]
+    )
 
     timeout_seconds = await get_int(session, OFFER_TIMEOUT)
     dispatch = Dispatch(

@@ -234,3 +234,96 @@ async def test_cannot_dispatch_someone_elses_request(client: AsyncClient, auth_h
 
     resp = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=other)
     assert resp.status_code == 404
+
+
+# --- Regression: re-dispatch after a decline ---
+@pytest.mark.asyncio
+async def test_redispatch_after_decline_does_not_break_reads(
+    client: AsyncClient, auth_headers: dict
+):
+    """A declined request can be re-dispatched without 500ing the read paths.
+
+    Declining returns the request to `pending`, so it can legitimately be
+    dispatched again — leaving two dispatch rows for one request. The enriched
+    queries used to join Dispatch straight onto request_id, so that second row
+    made `one_or_none()` raise MultipleResultsFound (500 on GET and PATCH) and
+    duplicated the request in the list endpoint.
+    """
+    drv = await _register_and_login(client, "redispatch-driver@example.com")
+    await _go_online(client, drv, 40.0001, -74.0001)
+
+    req = await client.post(
+        "/api/service-requests",
+        json={
+            "description": "Re-dispatch regression",
+            "location": "Nowhere",
+            "latitude": 40.0,
+            "longitude": -74.0,
+        },
+        headers=auth_headers,
+    )
+    sr_id = req.json()["id"]
+
+    first = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=auth_headers)
+    assert first.status_code == 201
+    first_id = first.json()["dispatch"]["id"]
+
+    declined = await client.post(
+        f"/api/dispatch/{first_id}/respond", json={"status": "declined"}, headers=drv
+    )
+    assert declined.status_code == 200
+
+    second = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=auth_headers)
+    assert second.status_code == 201, second.text
+    second_id = second.json()["dispatch"]["id"]
+    assert second_id != first_id  # genuinely two rows for one request
+
+    # The read paths must survive that.
+    detail = await client.get(f"/api/service-requests/{sr_id}", headers=auth_headers)
+    assert detail.status_code == 200, detail.text
+
+    patched = await client.patch(
+        f"/api/service-requests/{sr_id}", json={"status": "in_progress"}, headers=auth_headers
+    )
+    assert patched.status_code == 200, patched.text
+
+    listing = await client.get("/api/service-requests", headers=auth_headers)
+    assert listing.status_code == 200
+    assert len([r for r in listing.json() if r["id"] == sr_id]) == 1
+
+    # ...and they must describe the CURRENT attempt, not an earlier one.
+    current = await client.get(f"/api/dispatch/request/{sr_id}", headers=auth_headers)
+    assert current.status_code == 200
+    assert current.json()["id"] == second_id
+
+
+@pytest.mark.asyncio
+async def test_cannot_stack_a_second_live_dispatch(client: AsyncClient, auth_headers: dict):
+    """A request holding a live assignment refuses another one."""
+    drv = await _register_and_login(client, "stack-driver@example.com")
+    await _go_online(client, drv, 41.0001, -75.0001)
+
+    req = await client.post(
+        "/api/service-requests",
+        json={
+            "description": "No stacking",
+            "location": "Nowhere",
+            "latitude": 41.0,
+            "longitude": -75.0,
+        },
+        headers=auth_headers,
+    )
+    sr_id = req.json()["id"]
+
+    first = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=auth_headers)
+    assert first.status_code == 201
+
+    # Force the request back to `pending` while the assignment is still live —
+    # the inconsistent state the status check alone would not catch.
+    await client.patch(
+        f"/api/service-requests/{sr_id}", json={"status": "pending"}, headers=auth_headers
+    )
+
+    second = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=auth_headers)
+    assert second.status_code == 409
+    assert "live dispatch" in second.json()["detail"]

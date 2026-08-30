@@ -9,7 +9,7 @@ can render a driver-vs-client map.
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -54,16 +54,40 @@ def _compose_read(
     return read
 
 
-async def _query_enriched(session: AsyncSession, sr_id: int) -> ServiceRequestRead | None:
-    """Fetch one request with its requester + dispatch/driver info joined in."""
-    stmt = (
+def _enriched_select():
+    """Base query: a request plus its requester and its CURRENT dispatch.
+
+    A request can accumulate several dispatches — a driver declines, the
+    request returns to `pending`, and the next candidate is assigned — so
+    joining `Dispatch` directly on `request_id` multiplies the row out once per
+    attempt. That made `one_or_none()` below raise MultipleResultsFound (a 500
+    on read) and duplicated the request in the list endpoint.
+
+    Joining through "highest dispatch id per request" instead collapses that to
+    the latest attempt, which is the one clients should see, and keeps every
+    earlier attempt on the table as history.
+    """
+    latest = (
+        select(
+            Dispatch.request_id.label("request_id"),
+            func.max(Dispatch.id).label("dispatch_id"),
+        )
+        .group_by(Dispatch.request_id)
+        .subquery()
+    )
+    return (
         select(ServiceRequest, Requester, Dispatch, DriverUser, Driver)
         .outerjoin(Requester, Requester.id == ServiceRequest.user_id)
-        .outerjoin(Dispatch, Dispatch.request_id == ServiceRequest.id)
+        .outerjoin(latest, latest.c.request_id == ServiceRequest.id)
+        .outerjoin(Dispatch, Dispatch.id == latest.c.dispatch_id)
         .outerjoin(DriverUser, DriverUser.id == Dispatch.driver_id)
         .outerjoin(Driver, Driver.user_id == Dispatch.driver_id)
-        .where(ServiceRequest.id == sr_id)
     )
+
+
+async def _query_enriched(session: AsyncSession, sr_id: int) -> ServiceRequestRead | None:
+    """Fetch one request with its requester + current dispatch/driver joined in."""
+    stmt = _enriched_select().where(ServiceRequest.id == sr_id)
     row = (await session.execute(stmt)).one_or_none()
     if row is None:
         return None
@@ -89,13 +113,7 @@ async def list_service_requests(
     user: User = Depends(current_active_user),
 ) -> List[ServiceRequestRead]:
     """List requests. Admins see the full history; others see only their own."""
-    stmt = (
-        select(ServiceRequest, Requester, Dispatch, DriverUser, Driver)
-        .outerjoin(Requester, Requester.id == ServiceRequest.user_id)
-        .outerjoin(Dispatch, Dispatch.request_id == ServiceRequest.id)
-        .outerjoin(DriverUser, DriverUser.id == Dispatch.driver_id)
-        .outerjoin(Driver, Driver.user_id == Dispatch.driver_id)
-    )
+    stmt = _enriched_select()
     if not _is_admin(user):
         stmt = stmt.where(ServiceRequest.user_id == user.id)
     stmt = stmt.order_by(ServiceRequest.created_at.desc())

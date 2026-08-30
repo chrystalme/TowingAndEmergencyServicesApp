@@ -362,8 +362,8 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'This build captures a simulated phone location. '
-                            'A real geolocator package replaces it in production.',
+                            'Your device location is published while you are '
+                            'active, and is what dispatch matches against.',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.blue.shade800,

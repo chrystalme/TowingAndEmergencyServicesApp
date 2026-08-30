@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "823276358840",
+    "project_id": "towassist-f8ad5",
+    "storage_bucket": "towassist-f8ad5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:823276358840:android:4718a309636248ec5f784d",
+        "android_client_info": {
+          "package_name": "ng.towassist.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAAsB9mFe4oJDpKdMl-gs28ZDKizYt6TZ4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

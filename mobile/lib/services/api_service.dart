@@ -206,6 +206,21 @@ class ApiService {
     return (await get('/dispatch/mine?active_only=$activeOnly')) as List<dynamic>;
   }
 
+  /// Hand this device's push token to the backend.
+  Future<dynamic> registerDevice(String token, String platform) async {
+    return post('/devices', {'token': token, 'platform': platform});
+  }
+
+  /// Drop this device's push token, e.g. on sign-out.
+  Future<void> unregisterDevice(String token, String platform) async {
+    final headers = await _headers();
+    await http.delete(
+      Uri.parse('$baseUrl/devices'),
+      headers: headers,
+      body: json.encode({'token': token, 'platform': platform}),
+    );
+  }
+
   /// The signed-in user, including their role.
   Future<Map<String, dynamic>> getMe() async {
     return (await get('/users/me')) as Map<String, dynamic>;

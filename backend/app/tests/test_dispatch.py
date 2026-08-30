@@ -327,3 +327,83 @@ async def test_cannot_stack_a_second_live_dispatch(client: AsyncClient, auth_hea
     second = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=auth_headers)
     assert second.status_code == 409
     assert "live dispatch" in second.json()["detail"]
+
+
+# --- Driver's own job list ---
+@pytest.mark.asyncio
+async def test_driver_sees_and_accepts_own_assignments(client: AsyncClient, auth_headers: dict):
+    """A driver can discover what they were matched to, then act on it.
+
+    Responding needs a dispatch id, and /service-requests/{id} is scoped to the
+    requester and admins, so without this endpoint a driver had no way to learn
+    the id in the first place.
+    """
+    drv = await _register_and_login(client, "mine-driver@example.com")
+    await _go_online(client, drv, 42.0001, -76.0001)
+
+    # Nothing assigned yet.
+    empty = await client.get("/api/dispatch/mine", headers=drv)
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    req = await client.post(
+        "/api/service-requests",
+        json={
+            "service_type": "recovery",
+            "vehicle_type": "suv",
+            "description": "Stuck in a ditch off the highway",
+            "location": "Mile 42",
+            "latitude": 42.0,
+            "longitude": -76.0,
+        },
+        headers=auth_headers,
+    )
+    sr_id = req.json()["id"]
+    match = await client.post("/api/dispatch", json={"request_id": sr_id}, headers=auth_headers)
+    assert match.status_code == 201
+    dispatch_id = match.json()["dispatch"]["id"]
+
+    mine = await client.get("/api/dispatch/mine", headers=drv)
+    assert mine.status_code == 200
+    jobs = mine.json()
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job["id"] == dispatch_id
+    assert job["status"] == "assigned"
+    # Enough of the request to judge the job without a second call.
+    assert job["request_location"] == "Mile 42"
+    assert job["request_description"].startswith("Stuck in a ditch")
+    assert job["request_service_type"] == "recovery"
+    assert job["request_vehicle_type"] == "suv"
+    assert job["request_lat"] == 42.0
+
+    accepted = await client.post(
+        f"/api/dispatch/{dispatch_id}/respond", json={"status": "accepted"}, headers=drv
+    )
+    assert accepted.status_code == 200
+
+    still_mine = await client.get("/api/dispatch/mine", headers=drv)
+    assert [j["status"] for j in still_mine.json()] == ["accepted"]
+
+
+@pytest.mark.asyncio
+async def test_driver_only_sees_their_own_jobs(client: AsyncClient, auth_headers: dict):
+    """One driver's assignments must not leak into another's list."""
+    mine = await _register_and_login(client, "isolation-a@example.com")
+    other = await _register_and_login(client, "isolation-b@example.com")
+    await _go_online(client, mine, 43.0001, -77.0001)
+
+    req = await client.post(
+        "/api/service-requests",
+        json={
+            "description": "Isolation check",
+            "location": "Somewhere",
+            "latitude": 43.0,
+            "longitude": -77.0,
+        },
+        headers=auth_headers,
+    )
+    await client.post("/api/dispatch", json={"request_id": req.json()["id"]}, headers=auth_headers)
+
+    assert len((await client.get("/api/dispatch/mine", headers=mine)).json()) == 1
+    assert (await client.get("/api/dispatch/mine", headers=other)).json() == []

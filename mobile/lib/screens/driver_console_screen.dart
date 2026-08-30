@@ -22,8 +22,124 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<DriverProvider>().loadProfile();
+      final provider = context.read<DriverProvider>();
+      provider.loadProfile();
+      provider.loadAssignments();
     });
+  }
+
+  Future<void> _respond(int dispatchId, String status) async {
+    final provider = context.read<DriverProvider>();
+    final ok = await provider.respond(dispatchId, status);
+    if (!mounted) return;
+    final accepted = status == 'accepted';
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Text(ok
+            ? (accepted
+                ? 'Job accepted - you are enroute'
+                : 'Job declined - back in the available pool')
+            : provider.error ?? 'Could not respond'),
+        backgroundColor: ok ? Colors.green : Colors.red,
+      ));
+  }
+
+  /// A job card with the detail a driver needs to decide, plus the actions.
+  /// Only `assigned` jobs are actionable; accepted ones stay visible so the
+  /// driver can see what they are currently on.
+  Widget _assignmentCard(Map<String, dynamic> job) {
+    final isPending = job['status'] == 'assigned';
+    final price = job['price'];
+    final eta = job['eta_minutes'];
+    final distance = job['distance_km'];
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: isPending ? Colors.orange.shade300 : Colors.green.shade300,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isPending ? Icons.notifications_active : Icons.local_shipping,
+                  color: isPending ? Colors.orange.shade700 : Colors.green.shade700,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    (job['request_service_type'] ?? 'job').toString().toUpperCase(),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Text(
+                  (job['status'] ?? '').toString(),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(job['request_description']?.toString() ?? ''),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(Icons.place, size: 14, color: Colors.grey.shade600),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    job['request_location']?.toString() ?? '',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              children: [
+                if (distance != null)
+                  Text('$distance km', style: const TextStyle(fontSize: 12)),
+                if (eta != null)
+                  Text('~$eta min', style: const TextStyle(fontSize: 12)),
+                if (price != null)
+                  Text('Price $price',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            if (isPending) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _respond(job['id'] as int, 'declined'),
+                      child: const Text('Decline'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _respond(job['id'] as int, 'accepted'),
+                      child: const Text('Accept'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _goActive() async {
@@ -197,6 +313,37 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
                       ),
                     ],
                   ),
+
+                const SizedBox(height: 24),
+
+                // Assigned jobs. This half of the driver flow previously
+                // existed only as a curl command in the README.
+                Row(
+                  children: [
+                    const Text('Assigned Jobs',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Refresh jobs',
+                      onPressed: () => provider.loadAssignments(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (provider.assignments.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Text(
+                      provider.isActive
+                          ? 'No jobs yet. You are active and matchable.'
+                          : 'Go active to start receiving jobs.',
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  )
+                else
+                  ...provider.assignments.map(_assignmentCard),
 
                 const SizedBox(height: 24),
 

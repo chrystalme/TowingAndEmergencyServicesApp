@@ -64,8 +64,13 @@ def _candidate_schema(scored) -> DriverCandidate:
     )
 
 
-def dispatch_to_read(dispatch: Dispatch, driver: User = None, driver_profile: Driver = None) -> DispatchRead:
-    """Serialize a Dispatch, denormalizing driver display fields."""
+def dispatch_to_read(
+    dispatch: Dispatch,
+    driver: User = None,
+    driver_profile: Driver = None,
+    request: ServiceRequest = None,
+) -> DispatchRead:
+    """Serialize a Dispatch, denormalizing driver and request display fields."""
     return DispatchRead(
         id=dispatch.id,
         request_id=dispatch.request_id,
@@ -80,6 +85,12 @@ def dispatch_to_read(dispatch: Dispatch, driver: User = None, driver_profile: Dr
         driver_email=(driver.email if driver else None),
         driver_lat=(driver_profile.current_lat if driver_profile else None),
         driver_lng=(driver_profile.current_lng if driver_profile else None),
+        request_location=(request.location if request else None),
+        request_description=(request.description if request else None),
+        request_service_type=(request.service_type if request else None),
+        request_vehicle_type=(request.vehicle_type if request else None),
+        request_lat=(request.latitude if request else None),
+        request_lng=(request.longitude if request else None),
     )
 
 

@@ -15,6 +15,14 @@ class DriverProvider extends ChangeNotifier {
   String _currentStatus = 'off_duty';
   double? _latitude;
   double? _longitude;
+  List<Map<String, dynamic>> _assignments = const [];
+
+  /// Jobs currently assigned to this driver, newest first.
+  List<Map<String, dynamic>> get assignments => _assignments;
+
+  /// Jobs still awaiting an accept/decline.
+  List<Map<String, dynamic>> get pendingAssignments =>
+      _assignments.where((a) => a['status'] == 'assigned').toList();
 
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -53,6 +61,39 @@ class DriverProvider extends ChangeNotifier {
       _latitude = null;
       _longitude = null;
       notifyListeners();
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  /// Load the jobs this driver has been matched to.
+  Future<void> loadAssignments() async {
+    try {
+      final rows = await apiService.getMyDispatches();
+      _assignments = rows.map((r) => (r as Map).cast<String, dynamic>()).toList();
+      notifyListeners();
+    } catch (e) {
+      // A driver with no profile yet has no assignments — not an error.
+      _assignments = const [];
+      notifyListeners();
+    }
+  }
+
+  /// Accept or decline an assigned job.
+  ///
+  /// Accepting moves the driver to `enroute`; declining returns them to the
+  /// available pool so the request can be matched to someone else. Either way
+  /// the profile and the job list are re-read, since the backend changes both.
+  Future<bool> respond(int dispatchId, String status) async {
+    _setLoading(true);
+    try {
+      await apiService.respondDispatch(dispatchId, status);
+      await loadProfile();
+      await loadAssignments();
+      return true;
+    } catch (e) {
+      _setError('Could not $status the job: $e');
+      return false;
     } finally {
       _setLoading(false);
     }

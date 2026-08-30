@@ -5,6 +5,10 @@ class RequestProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   List<dynamic> _requests = [];
+  Map<String, dynamic>? _lastDispatch;
+
+  /// The assignment produced by the most recent [dispatchRequest].
+  Map<String, dynamic>? get lastDispatch => _lastDispatch;
 
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -52,6 +56,10 @@ class RequestProvider with ChangeNotifier {
       );
       _requests.insert(0, request);
       notifyListeners();
+      // Filing a request is only half the flow — nothing happens until a
+      // driver is matched. The web app dispatches straight after creating,
+      // so mobile requests used to sit pending forever.
+      await dispatchRequest(request['id'] as int);
       return true;
     } catch (e) {
       _setError(e.toString());
@@ -59,6 +67,22 @@ class RequestProvider with ChangeNotifier {
     } finally {
       _setLoading(false);
     }
+  }
+
+  /// Match the nearest available driver to a freshly filed request.
+  ///
+  /// A failure here is not a failed request: the request exists and can be
+  /// dispatched later, so this records the reason rather than throwing.
+  Future<void> dispatchRequest(int requestId) async {
+    _lastDispatch = null;
+    try {
+      final match = await apiService.createDispatch(requestId);
+      _lastDispatch = (match['dispatch'] as Map).cast<String, dynamic>();
+      await fetchRequests();
+    } catch (e) {
+      _setError('No driver available yet: $e');
+    }
+    notifyListeners();
   }
 
   // Refresh requests

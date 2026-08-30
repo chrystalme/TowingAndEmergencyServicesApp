@@ -137,6 +137,15 @@ class DispatchRead(BaseModel):
     driver_email: Optional[str] = None
     driver_lat: Optional[float] = None
     driver_lng: Optional[float] = None
+    # Enough of the linked request for a driver to judge a job without a second
+    # round-trip (the driver cannot read /service-requests/{id} — it is scoped
+    # to the requester and admins).
+    request_location: Optional[str] = None
+    request_description: Optional[str] = None
+    request_service_type: Optional[str] = None
+    request_vehicle_type: Optional[str] = None
+    request_lat: Optional[float] = None
+    request_lng: Optional[float] = None
 
     class Config:
         from_attributes = True

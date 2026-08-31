@@ -259,6 +259,35 @@ local backend or the deployed one:
 network stack, so `localhost` there means the emulator, not your machine.
 `10.0.2.2` is the emulator's alias for the host.
 
+#### One command (Windows)
+
+```powershell
+.\scripts\start-mobile.ps1
+```
+
+Sets up the toolchain, starts the backend, boots an emulator, gives it a
+position, and runs the app. Safe to re-run: anything already running is left
+alone.
+
+```powershell
+.\scripts\start-mobile.ps1 -Api prod          # against the deployed API, no Docker
+.\scripts\start-mobile.ps1 -Avd towassist_client -SkipBackend   # a second device
+.\scripts\start-mobile.ps1 -SetupOnly         # get ready, then stop
+.\scripts\start-mobile.ps1 -ApiUrl http://192.168.1.42:8000/api  # physical phone
+```
+
+To get just the toolchain on PATH in your current shell - note the leading
+dot, which is what makes it apply to *this* shell rather than a child process
+that exits immediately:
+
+```powershell
+. .\scripts\dev-env.ps1
+flutter devices
+```
+
+Both take `-DevRoot` / the same paths if your toolchain lives somewhere other
+than `%USERPROFILE%\dev`.
+
 #### Android (Windows, Linux, macOS)
 
 ```bash

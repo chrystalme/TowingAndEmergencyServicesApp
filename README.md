@@ -243,43 +243,94 @@ npm ci            # add --legacy-peer-deps if peer conflicts
 npm run dev       # http://localhost:3000
 ```
 
-### Mobile (iOS simulator)
+### Mobile
 
-The app only needs the backend reachable at `http://localhost:8000/api` — the
-iOS Simulator shares the host's network, so `localhost` resolves to your Mac.
-Start the backend first (non-Docker command above, or `docker compose up -d --build`
-and use port 8000 from the `api` service).
+The app takes its API address at build time, so one codebase runs against a
+local backend or the deployed one:
 
-Requirements: Flutter 3.x, Xcode (with a downloaded simulator runtime), and
-CocoaPods (`sudo gem install cocoapods` if missing).
+| Target | `API_BASE_URL` |
+| --- | --- |
+| Android emulator, local backend | `http://10.0.2.2:8000/api` |
+| iOS simulator / desktop, local backend | omit it (defaults to `http://localhost:8000/api`) |
+| Physical phone, local backend | `http://<your-lan-ip>:8000/api` |
+| Deployed backend | `https://<your-api-host>/api` |
+
+`10.0.2.2` is the one that catches people out: an Android emulator has its own
+network stack, so `localhost` there means the emulator, not your machine.
+`10.0.2.2` is the emulator's alias for the host.
+
+#### Android (Windows, Linux, macOS)
 
 ```bash
-# 1. Check Flutter sees the toolchain
+# 1. Toolchain on PATH. Adjust the paths to wherever yours live.
+export JAVA_HOME="$HOME/dev/jdk/jdk-17"
+export ANDROID_HOME="$HOME/dev/android-sdk"
+export PATH="$HOME/dev/flutter/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$JAVA_HOME/bin:$PATH"
+flutter doctor            # Android toolchain should be green
+
+# 2. Start the backend, then an emulator
+docker compose up -d --build          # from the repo root
+flutter emulators                     # list what you have
+flutter emulators --launch <id>       # or: emulator -avd <id>
+
+# 3. Run against the local backend
 cd mobile
-flutter doctor            # Xcode + iOS section should be green
-
-# 2. Start a simulator
-open -a Simulator         # boots the default device
-# or pick a specific one:
-xcrun simctl list devices available
-xcrun simctl boot "iPhone 16 Pro" && open -a Simulator
-
-# 3. Fetch deps and run (picks the booted simulator)
 flutter pub get
-flutter run               # or: flutter run -d <device-id>
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000/api
 ```
 
-Notes:
+Sign in with any seeded account, e.g. `alice@towassist.com` / `Commuter123!`
+for a customer or `dan@towassist.com` / `Driver123!` for a driver. The Driver
+Console only appears for accounts whose role is `driver` — the role is read at
+sign-in, so an account promoted while you are logged in needs a fresh sign-in
+before the console shows up.
 
-- First launch compiles the iOS app and runs `pod install` automatically —
-  it takes a few minutes; subsequent runs are fast.
-- With the app running, use `r` to hot-reload, `R` to hot-restart, `q` to quit.
-- The driver GPS heartbeat is simulated in the Driver Console (tap
-  **Go Active**), so no location permissions are needed in the simulator.
-- Android emulators do **not** share the host network — `localhost` there
-  refers to the emulator itself, so the hardcoded
-  `http://localhost:8000/api` in `mobile/lib/services/api_service.dart` only
-  works on iOS / macOS / desktop targets.
+#### iOS simulator (macOS only)
+
+The simulator shares the host's network, so no `--dart-define` is needed.
+Requirements: Xcode with a downloaded runtime, and CocoaPods.
+
+```bash
+cd mobile
+flutter pub get
+open -a Simulator
+flutter run
+```
+
+First launch runs `pod install` and takes a few minutes; later runs are fast.
+
+#### While it is running
+
+`r` hot-reloads, `R` hot-restarts, `q` quits.
+
+#### Location
+
+The app uses the **device's real GPS** — for a driver it is what dispatch
+matches against, so an emulator with no position set will not be matched to
+anything. Set one:
+
+```bash
+adb emu geo fix 3.3841 6.4550        # longitude first, then latitude
+```
+
+(That pair is Apapa, Lagos. Note the order — `geo fix` takes longitude first,
+which is the reverse of how coordinates are usually written.)
+
+#### Notifications
+
+Push needs `mobile/android/app/google-services.json` (committed) and the
+backend running with `FIREBASE_CREDENTIALS_JSON` set. Without the backend
+credential everything else still works and notifications are simply skipped.
+
+#### Building an APK to hand out
+
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=https://<your-api-host>/api
+```
+
+This needs `mobile/android/key.properties` and the keystore it points at, both
+gitignored. Without them the build still succeeds but is signed with the debug
+key: fine to install, never to publish. See `mobile/android/app/build.gradle.kts`.
 
 ## Environment variables
 

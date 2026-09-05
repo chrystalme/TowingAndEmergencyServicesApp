@@ -14,3 +14,5 @@ pubspec.lock
 
 # OS
 .DS_Store
+# Widget Preview related
+.widget_preview/

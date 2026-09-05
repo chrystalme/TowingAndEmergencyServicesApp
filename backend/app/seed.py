@@ -40,7 +40,12 @@ Demo accounts (email / password / role):
 
 import asyncio
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+
+
+def _utcnow() -> datetime:
+    """Return naive UTC timestamp to prevent deprecation warning and match DB timestamp format."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 from sqlalchemy import select
 
@@ -123,7 +128,7 @@ async def seed() -> None:
                 is_superuser=True,
                 is_verified=True,
                 role="admin",
-                created_at=datetime.utcnow(),
+                created_at=_utcnow(),
             ),
             "dan@towassist.com": User(
                 email="dan@towassist.com",
@@ -132,7 +137,7 @@ async def seed() -> None:
                 is_superuser=False,
                 is_verified=True,
                 role="driver",
-                created_at=datetime.utcnow(),
+                created_at=_utcnow(),
             ),
             "mercy@towassist.com": User(
                 email="mercy@towassist.com",
@@ -141,7 +146,7 @@ async def seed() -> None:
                 is_superuser=False,
                 is_verified=True,
                 role="driver",
-                created_at=datetime.utcnow(),
+                created_at=_utcnow(),
             ),
             "alice@towassist.com": User(
                 email="alice@towassist.com",
@@ -150,7 +155,7 @@ async def seed() -> None:
                 is_superuser=False,
                 is_verified=True,
                 role="commuter",
-                created_at=datetime.utcnow(),
+                created_at=_utcnow(),
             ),
             "bob@towassist.com": User(
                 email="bob@towassist.com",
@@ -159,7 +164,7 @@ async def seed() -> None:
                 is_superuser=False,
                 is_verified=True,
                 role="commuter",
-                created_at=datetime.utcnow(),
+                created_at=_utcnow(),
             ),
         }
 
@@ -197,7 +202,7 @@ async def seed() -> None:
                 phone_number="+2348031234567",
                 current_lat=6.4550,   # Apapa
                 current_lng=3.3841,
-                last_position_at=datetime.utcnow(),
+                last_position_at=_utcnow(),
             ),
             Driver(
                 user_id=created_users["mercy@towassist.com"].id,
@@ -206,7 +211,7 @@ async def seed() -> None:
                 phone_number="+2348059876543",
                 current_lat=6.6018,   # Ikeja
                 current_lng=3.3515,
-                last_position_at=datetime.utcnow(),
+                last_position_at=_utcnow(),
             ),
         ]
 
@@ -270,7 +275,7 @@ async def seed() -> None:
 
         # ------------------------------------------------------------- service requests
         if await session.scalar(select(ServiceRequest.id).limit(1)) is None:
-            now = datetime.utcnow()
+            now = _utcnow()
             requests = [
                 # Pending request owned by alice — created but NOT yet dispatched,
                 # so the user can walk the request → dispatch flow on it.
@@ -349,14 +354,14 @@ async def seed() -> None:
                     reporter_id=created_users["alice@towassist.com"].id,
                     incident_type="breakdown",
                     description="Engine stalled on the highway; requesting a tow.",
-                    timestamp=datetime.utcnow() - timedelta(days=3),
+                    timestamp=_utcnow() - timedelta(days=3),
                     resolved=True,
                 ),
                 EmergencyLog(
                     reporter_id=created_users["bob@towassist.com"].id,
                     incident_type="puncture",
                     description="Flat tyre, need roadside assistance.",
-                    timestamp=datetime.utcnow() - timedelta(minutes=30),
+                    timestamp=_utcnow() - timedelta(minutes=30),
                     resolved=False,
                 ),
             ]

@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncGenerator
 from typing import Any
-from fastapi import Depends
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi_users import FastAPIUsers, BaseUserManager, schemas
 from fastapi_users.authentication import (
     AuthenticationBackend,
@@ -13,6 +13,7 @@ from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from .settings import settings
+from .database import get_async_session
 from ..models import User
 
 
@@ -99,7 +100,45 @@ def may_drive(user: User) -> bool:
 
 
 # Dependencies for current user
-current_active_user = fastapi_users.current_user(active=True)
+#
+# `current_active_user` accepts EITHER a fastapi-users JWT (the built-in
+# email/password login) OR a Clerk session token (when Clerk is configured) —
+# whichever the user signed in with works. The resolver is defined here so
+# the name stays the same and no router or call site needs to change. See
+# app/core/clerk_auth.py for the Clerk half.
+async def current_active_user(
+    request: Request,
+    session: AsyncSession = Depends(get_async_session),
+) -> User:
+    # Clerk session-token path (no-op unless CLERK_SECRET_KEY is set).
+    from .clerk_auth import resolve_clerk_user
+
+    clerk_user = await resolve_clerk_user(request, session)
+    if clerk_user is not None:
+        return clerk_user
+
+    # Built-in email/password JWT path — the original behaviour.
+    authorization = request.headers.get("Authorization", "")
+    token = authorization[7:].strip() if authorization.startswith("Bearer ") else None
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    strategy = get_jwt_strategy()
+    manager = UserManager(SQLAlchemyUserDatabase(session, User))
+    user = await strategy.read_token(token, manager)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
 current_superuser = fastapi_users.current_user(active=True, superuser=True)
 
 # Routers
@@ -119,4 +158,37 @@ class UserRead(schemas.BaseUser[int]):
     role: str = ROLE_COMMUTER
 
 
-users_router = fastapi_users.get_users_router(UserRead, schemas.BaseUserUpdate)
+# Thin replacement for fastapi-users' users router.
+#
+# The library's own router wires its internal `authenticator.current_user`
+# into GET/PATCH /users/me, which only understands the built-in JWT — a Clerk
+# session would 401 as "Unauthorized" even though the dual-path
+# `current_active_user` accepted it. Building the two endpoints here with the
+# shared dependency keeps the surface identical while making both auth paths
+# work. Nothing in the repo uses fastapi-users' list/get/delete /users/{id}
+# routes (superuser management goes through /admin/users), so they are not
+# re-created.
+users_router = APIRouter()
+
+
+@users_router.get("/me", response_model=UserRead, name="users:current_user")
+async def users_me(user: User = Depends(current_active_user)) -> UserRead:
+    """The signed-in user's profile, whichever way they signed in."""
+    return UserRead.model_validate(user)
+
+
+@users_router.patch(
+    "/me", response_model=UserRead, name="users:patch_current_user"
+)
+async def users_patch_me(
+    user_update: schemas.BaseUserUpdate,
+    user: User = Depends(current_active_user),
+    user_manager: BaseUserManager = Depends(get_user_manager),
+) -> UserRead:
+    """Update the signed-in user (email/password/is_active).
+
+    A Clerk-provisioned user who sets a password here gains the email/password
+    path too; the placeholder hash is replaced.
+    """
+    updated = await user_manager.update(user_update, user, safe=True, request=None)
+    return UserRead.model_validate(updated)

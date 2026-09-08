@@ -91,6 +91,16 @@ class Settings(BaseSettings):
     DISPATCH_OFFER_TIMEOUT_SECONDS: int = 120
     DISPATCH_OFFER_EXTENSION_SECONDS: int = 60
     DISPATCH_OFFER_MAX_EXTENSIONS: int = 2
+    # Clerk hosted auth (alternative to the built-in email/password JWT).
+    # When CLERK_SECRET_KEY is empty the API is auth-only via fastapi-users,
+    # exactly as before; set it to enable Clerk session-token verification on
+    # top of the existing login. Get the key from `clerk init`/the dashboard.
+    CLERK_SECRET_KEY: str = ""
+    CLERK_PUBLISHABLE_KEY: str = ""
+    # Comma-separated browser origins allowed to present a Clerk session
+    # (the token's `azp` claim). Leave empty to skip the origin check; set it
+    # in production, e.g. "http://localhost:3001,https://app.example.com".
+    CLERK_AUTHORIZED_PARTIES: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

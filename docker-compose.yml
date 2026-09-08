@@ -36,6 +36,11 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:secret@db/towing
       JWT_SECRET_KEY: super-secret-key
       REDIS_URL: redis://redis:6379/0
+      # Clerk hosted auth (optional). Empty => the API accepts only the
+      # built-in email/password JWT, exactly as before.
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:-}
+      CLERK_AUTHORIZED_PARTIES: ${CLERK_AUTHORIZED_PARTIES:-}
       # Read from a gitignored .env that compose loads automatically, so the
       # service-account key never enters the repository. Unset is fine: push
       # is skipped and everything else works.
@@ -66,6 +71,14 @@ services:
     build: ./web
     environment:
       NEXT_PUBLIC_API_URL: http://api:8000/api
+      # Clerk (optional; mirrors web/.env.local). Empty => the ClerkProvider
+      # renders nothing and the login page stays email/password only.
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_URL:-/sign-in}
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_URL:-/sign-up}
+      NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: ${NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL:-/dashboard}
+      NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: ${NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL:-/dashboard}
     ports:
       - "3001:3000"
     depends_on:

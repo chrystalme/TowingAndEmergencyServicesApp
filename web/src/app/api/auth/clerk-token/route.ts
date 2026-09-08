@@ -14,13 +14,23 @@ import { NextRequest, NextResponse } from 'next/server';
  * working.
  */
 export async function GET(_request: NextRequest) {
-  const { sessionId, getToken } = await auth();
-  if (!sessionId) {
-    return NextResponse.json({ token: null }, { status: 401 });
+  if (!process.env.CLERK_SECRET_KEY) {
+    // Clerk is not configured in this environment: there is no session to
+    // bridge. 404 (not 500) so the client treats it as "nothing to sync".
+    return NextResponse.json({ token: null }, { status: 404 });
   }
-  const token = await getToken();
-  if (!token) {
-    return NextResponse.json({ token: null }, { status: 401 });
+  try {
+    const { sessionId, getToken } = await auth();
+    if (!sessionId) {
+      return NextResponse.json({ token: null }, { status: 401 });
+    }
+    const token = await getToken();
+    if (!token) {
+      return NextResponse.json({ token: null }, { status: 401 });
+    }
+    return NextResponse.json({ token });
+  } catch (_) {
+    // Clerk middleware not active / misconfigured: same calm 404.
+    return NextResponse.json({ token: null }, { status: 404 });
   }
-  return NextResponse.json({ token });
 }

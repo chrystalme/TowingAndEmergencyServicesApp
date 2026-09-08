@@ -169,25 +169,29 @@ export default function LoginPage() {
           </div>
         </form>
 
-        <div className="relative my-6">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-300" />
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="bg-white px-3 text-gray-500">or continue with</span>
-          </div>
-        </div>
+        {process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ? (
+          <>
+            <div className="relative my-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="bg-white px-3 text-gray-500">or continue with</span>
+              </div>
+            </div>
 
-        <Link
-          href="/sign-in"
-          className="w-full flex justify-center py-2 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 hover:bg-gray-50"
-        >
-          Continue with Clerk
-        </Link>
-        <p className="mt-2 text-center text-xs text-gray-400">
-          Existing accounts sign in with email and password; Clerk is an
-          alternative way in — your requests and driver history follow either.
-        </p>
+            <Link
+              href="/sign-in"
+              className="w-full flex justify-center py-2 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 hover:bg-gray-50"
+            >
+              Continue with Clerk
+            </Link>
+            <p className="mt-2 text-center text-xs text-gray-400">
+              Existing accounts sign in with email and password; Clerk is an
+              alternative way in — your requests and driver history follow either.
+            </p>
+          </>
+        ) : null}
       </div>
     </div>
   );

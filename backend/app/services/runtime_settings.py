@@ -114,6 +114,78 @@ MINIMUM_FARE = IntSetting(
     description="Lowest quote in naira that any job may be priced at.",
 )
 
+# ---------- Fuel + labour-time pricing ----------
+#
+# On top of the rate card, a quote now adds fuel (distance * consumption *
+# pump price) and labour-time (travelling minutes scaled by traffic, plus
+# on-site minutes, × a per-minute rate). These layer under the same minimum
+# fare and round-up as the rate card.
+#
+# NOTE: the pump price default of 1,000 NGN/litre is a STAND-IN for the
+# market price pending commercial sign-off — it is the component of a job
+# the per-km slope has always implicitly covered, now surfaced so it can be
+# changed live.
+
+# Store litres-per-km as permille (litres × 1000) so the value stays an
+# integer knob. Stored value 260 == 0.26 L/km; callers divide by 1000.
+FUEL_LITRES_PER_KM_KNOBS: dict[str, IntSetting] = {
+    service_type: IntSetting(
+        key=f"fuel_litres_per_km_{service_type}",
+        default=int(round(pricing.DEFAULT_FUEL_LITRES_PER_KM.get(service_type, 0.0) * 1000)),
+        minimum=0,
+        maximum=1000,
+        description=(
+            f"Fuel burnt by a {service_type} job in litres per km × 1000 "
+            "(permille, to stay an integer; e.g. 260 = 0.26 L/km)."
+        ),
+    )
+    for service_type in pricing.SERVICE_TYPES
+}
+
+FUEL_PRICE_PER_LITRE = IntSetting(
+    key="fuel_price_ngn_per_litre",
+    default=pricing.DEFAULT_FUEL_PRICE_PER_LITRE,
+    minimum=0,
+    maximum=5000,
+    description=(
+        "Pump price in naira per litre used to cost fuel in a quote "
+        "(default is a stand-in for the market price pending commercial sign-off)."
+    ),
+)
+
+LABOUR_NGN_PER_MINUTE = IntSetting(
+    key="labour_ngn_per_minute",
+    default=2000,  # pricing.DEFAULT_LABOUR_NGN_PER_MINUTE * 10, held in permille
+    minimum=0,
+    maximum=10000,
+    description=(
+        "Crew-time rate in naira per minute × 10 (permille-style, to stay "
+        "an integer; e.g. 2000 = ₦200/min)."
+    ),
+)
+
+ON_SITE_MINUTES_KNOBS: dict[str, IntSetting] = {
+    service_type: IntSetting(
+        key=f"on_site_minutes_{service_type}",
+        default=pricing.DEFAULT_ON_SITE_MINUTES.get(service_type, 0),
+        minimum=0,
+        maximum=600,
+        description=f"Minutes the crew is expected to spend on site for a {service_type} job.",
+    )
+    for service_type in pricing.SERVICE_TYPES
+}
+
+TRAFFIC_MULTIPLIER_PERMILLE = IntSetting(
+    key="traffic_multiplier_permille",
+    default=int(round(pricing.DEFAULT_TRAFFIC_MULTIPLIER * 1000)),
+    minimum=1000,
+    maximum=2000,
+    description=(
+        "Multiplier applied to a job's travelling minutes for traffic, in "
+        "permille (1000 = ×1.0; defaults to 1300 = ×1.3)."
+    ),
+)
+
 
 KNOBS: dict[str, IntSetting] = {
     knob.key: knob
@@ -124,6 +196,11 @@ KNOBS: dict[str, IntSetting] = {
         MINIMUM_FARE,
         *PRICE_BASE_KNOBS.values(),
         *PRICE_PER_KM_KNOBS.values(),
+        FUEL_PRICE_PER_LITRE,
+        LABOUR_NGN_PER_MINUTE,
+        TRAFFIC_MULTIPLIER_PERMILLE,
+        *FUEL_LITRES_PER_KM_KNOBS.values(),
+        *ON_SITE_MINUTES_KNOBS.values(),
     )
 }
 

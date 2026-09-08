@@ -64,6 +64,63 @@ def test_negative_distance_cannot_discount_a_job():
     assert quote(CARD, "towing", "car", -50) == quote(CARD, "towing", "car", 0)
 
 
+def test_fuel_price_raises_the_quote():
+    """Fuel meters by distance × consumption × pump price, over the same card."""
+    plain = quote(CARD, "towing", "car", 5)
+    with_fuel = quote(
+        CARD, "towing", "car", 5,
+        fuel_ngn_per_litre=500, fuel_litres_per_km=0.26,
+    )
+    # 5 * 0.26 * 500 = 650, rounded up to N100.
+    assert with_fuel == plain + Decimal("700.00")
+
+
+def test_traffic_multiplier_raises_the_quote():
+    """A fatter traffic multiplier inflates travelling minutes only."""
+    plain = quote(CARD, "towing", "car", 5)
+    busy = quote(
+        CARD, "towing", "car", 5,
+        labour_ngn_per_minute=200, traffic_multiplier=2.0,
+    )
+    # eta(5 km) = 7.5 min; 7.5 * 2.0 * 200 = 3000 -> a round +N3000.
+    assert busy == plain + Decimal("3000.00")
+
+
+def test_fuel_only_job_is_still_floored_by_the_minimum_fare():
+    """Fuel is a surcharge on top, not a way under the floor."""
+    floored = quote(
+        CARD, "roadside", "car", 0.2,
+        fuel_ngn_per_litre=1000, fuel_litres_per_km=0.26,
+    )
+    # 0.2 km barely moves: base + distance + ~N52 of fuel is far below the
+    # N10,000 floor and must not produce a sub-floor quote.
+    assert floored == Decimal("10000.00")
+    assert floored == quote(CARD, "roadside", "car", 0.2)
+
+
+def test_on_site_minutes_add_labour_time_to_the_quote():
+    """Crew time on the scene is billable on top of travel time."""
+    plain = quote(CARD, "towing", "car", 5)
+    on_site = quote(
+        CARD, "towing", "car", 5,
+        labour_ngn_per_minute=200, on_site_minutes=30,
+    )
+    # 37.5 min × ₦200 = 7,500: 7.5 min travel (eta at 40 km/h) + 30 min on site.
+    assert on_site == plain + Decimal("7500.00")
+
+
+def test_zero_fuel_and_labour_reproduce_the_classic_rate_card_quote():
+    """The new inputs default away to exactly the old base+distance result."""
+    plain = quote(CARD, "towing", "car", 12.3)
+    zeroed = quote(
+        CARD, "towing", "car", 12.3,
+        fuel_ngn_per_litre=0, fuel_litres_per_km=0.26,
+        labour_ngn_per_minute=0, on_site_minutes=45,
+        traffic_multiplier=1.0,
+    )
+    assert zeroed == plain
+
+
 @pytest.mark.asyncio
 async def test_live_card_falls_back_to_defaults_without_a_session():
     card = await pricing.load_rate_card(None)

@@ -113,6 +113,57 @@ async def test_nearby_drivers_returns_ranked_candidates(client: AsyncClient, aut
     assert candidates[0]["email"] == "near@example.com"
 
 
+@pytest.mark.asyncio
+async def test_nearby_drivers_carry_price_estimates_and_vehicle_details(
+    client: AsyncClient, auth_headers: dict
+):
+    """Preview candidates with the new fuel+labour pricing and their truck."""
+    far = await _register_and_login(client, "estimate-far@example.com")
+    near = await _register_and_login(client, "estimate-near@example.com")
+    await _go_online(client, far, 37.0, -122.5)      # ~90km away
+    await _go_online(client, near, 37.769, -122.42)  # ~1km away
+
+    # Give the NEAR driver a registered truck (the far driver has none), so
+    # the populated and the None path are both exercised.
+    truck = await client.post(
+        "/api/vehicles",
+        json={
+            "make": "Mercedes-Benz",
+            "model": "Sprinter Tow",
+            "year": 2021,
+            "plate_number": "TRK-8821-NG",
+        },
+        headers=near,
+    )
+    assert truck.status_code == 201, truck.text
+
+    resp = await client.get(
+        "/api/dispatch/available?lat=37.7749&lng=-122.4194",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    candidates = resp.json()
+    assert len(candidates) == 2
+    assert candidates[0]["email"] == "estimate-near@example.com"
+    assert candidates[0]["distance_km"] < candidates[1]["distance_km"]
+
+    # Every candidate is priced, and the price grows with distance: farther
+    # drivers burn more fuel and travel time, so their estimate is higher.
+    for candidate in candidates:
+        assert isinstance(candidate["price_estimate"], (int, float))
+        assert candidate["price_estimate"] > 0
+    assert candidates[0]["price_estimate"] <= candidates[1]["price_estimate"]
+
+    # The near driver's registered vehicle shows through; the far driver has
+    # none, so those fields stay None.
+    assert candidates[0]["vehicle_make"] == "Mercedes-Benz"
+    assert candidates[0]["vehicle_model"] == "Sprinter Tow"
+    assert candidates[0]["vehicle_plate"] == "TRK-8821-NG"
+    assert candidates[1]["vehicle_make"] is None
+    assert candidates[1]["vehicle_model"] is None
+    assert candidates[1]["vehicle_plate"] is None
+
+
 # --- Dispatch matching ---
 @pytest.mark.asyncio
 async def test_dispatch_matches_nearest_driver_and_prices(client: AsyncClient, auth_headers: dict):

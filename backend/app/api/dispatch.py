@@ -20,19 +20,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_active_user
 from ..core.database import get_async_session
-from ..models import Dispatch, Driver, ServiceRequest, User
+from ..models import Dispatch, Driver, ServiceRequest, User, Vehicle
 from ..schemas import DispatchMatchResponse, DispatchRead, DriverCandidate
 from ..services.dispatch import (
     BUSY_DISPATCH_STATES,
     DISPATCH_TRANSITIONS,
+    _candidate_schema,
     apply_dispatch_status,
     can_transition,
     dispatch_read_with_contact,
+    estimate_price_for,
     expire_stale_offers,
     list_available_drivers,
     match_request,
     rank_candidates,
-    _candidate_schema,
 )
 from .tracking_ws import publish_dispatch_status
 from ..services.runtime_settings import (
@@ -56,13 +57,44 @@ class RespondIn(BaseModel):
 async def nearby_drivers(
     lat: float = Query(..., ge=-90, le=90),
     lng: float = Query(..., ge=-180, le=180),
+    service_type: str = Query("towing", min_length=1, max_length=50),
+    vehicle_type: str = Query("car", min_length=1, max_length=50),
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ) -> List[DriverCandidate]:
-    """Preview the nearest available drivers for a location (no assignment)."""
+    """Preview the nearest available drivers for a location (no assignment).
+
+    Each candidate carries a ``price_estimate`` computed with the live
+    fuel+labour formula at *that driver's* distance, plus their own vehicle
+    (first registered), so a client can compare who is close AND what each
+    would cost before triggering a match.
+    """
     all_drivers = await list_available_drivers(session)
-    ranked = rank_candidates(all_drivers, lat, lng)
-    return [_candidate_schema(r) for r in ranked]
+
+    # The candidate's own registered truck, first by id — so recognition and
+    # the price estimate come from one per-candidate lookup rather than N.
+    driver_ids = [user_.id for _, user_ in all_drivers]
+    vehicles: dict[int, Vehicle] = {}
+    if driver_ids:
+        rows = (
+            await session.execute(
+                select(Vehicle)
+                .where(Vehicle.owner_id.in_(driver_ids))
+                .order_by(Vehicle.id)
+            )
+        ).scalars().all()
+        for vehicle in rows:
+            vehicles.setdefault(vehicle.owner_id, vehicle)
+
+    ranked = rank_candidates(all_drivers, lat, lng, vehicles=vehicles)
+    candidates = []
+    for r in ranked:
+        candidate = await _candidate_schema(r)
+        candidate.price_estimate = await estimate_price_for(
+            session, service_type, vehicle_type, candidate.distance_km
+        )
+        candidates.append(candidate)
+    return candidates
 
 
 @router.get("/mine", response_model=List[DispatchRead])

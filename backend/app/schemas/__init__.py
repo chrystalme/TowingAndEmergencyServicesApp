@@ -188,6 +188,17 @@ class DriverCandidate(BaseModel):
     current_lng: float
     distance_km: float
     eta_minutes: float
+    # Server-side estimate of what the job would cost with THIS driver at
+    # THEIR distance, using the live fuel+labour formula. A quote for the
+    # matched driver is snapshotted on the Dispatch; this lets a client see
+    # how the price moves with who gets sent.
+    price_estimate: Optional[float] = None
+    # The candidate's own registered vehicle (first by id), so a client can
+    # recognise the truck before the job is even assigned. Optional: a
+    # driver may not have registered one yet.
+    vehicle_make: Optional[str] = None
+    vehicle_model: Optional[str] = None
+    vehicle_plate: Optional[str] = None
 
 
 class DispatchMatchResponse(BaseModel):

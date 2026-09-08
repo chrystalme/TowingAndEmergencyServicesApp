@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import Dispatch, Driver, ServiceRequest, User, Vehicle
 from ..schemas import DispatchRead, DriverCandidate
 from .geo import eta_minutes, haversine_km
-from .pricing import CURRENCY, calculate_price
+from .pricing import CURRENCY, calculate_price, quote
 from .runtime_settings import OFFER_TIMEOUT, get_int
 
 logger = logging.getLogger(__name__)
@@ -101,8 +101,20 @@ async def list_available_drivers(session: AsyncSession):
     return result.all()  # list[(Driver, User)]
 
 
-def rank_candidates(drivers, lat: float, lng: float, limit: int = CANDIDATE_LIMIT):
-    """Compute distance/ETA for each driver and return them sorted nearest-first."""
+def rank_candidates(
+    drivers,
+    lat: float,
+    lng: float,
+    limit: int = CANDIDATE_LIMIT,
+    vehicles: dict[int, "Vehicle"] | None = None,
+):
+    """Compute distance/ETA for each driver and return them sorted nearest-first.
+
+    ``vehicles`` maps driver user-id -> their own Vehicle (first by id); it is
+    attached so the preview endpoint can show what truck each candidate
+    operates without an extra query per candidate.
+    """
+    vehicles = vehicles or {}
     scored = []
     for driver, user in drivers:
         distance_km = haversine_km(lat, lng, driver.current_lat, driver.current_lng)
@@ -112,14 +124,16 @@ def rank_candidates(drivers, lat: float, lng: float, limit: int = CANDIDATE_LIMI
                 "user": user,
                 "distance_km": round(distance_km, 2),
                 "eta_minutes": eta_minutes(distance_km),
+                "vehicle": vehicles.get(user.id),
             }
         )
     scored.sort(key=lambda x: x["distance_km"])
     return scored[:limit]
 
 
-def _candidate_schema(scored) -> DriverCandidate:
-    return DriverCandidate(
+async def _candidate_schema(scored) -> DriverCandidate:
+    vehicle = scored.get("vehicle")
+    candidate = DriverCandidate(
         driver_id=scored["user"].id,
         name=scored.get("name"),
         email=scored["user"].email,
@@ -128,6 +142,29 @@ def _candidate_schema(scored) -> DriverCandidate:
         distance_km=scored["distance_km"],
         eta_minutes=scored["eta_minutes"],
     )
+    if vehicle is not None:
+        candidate.vehicle_make = vehicle.make
+        candidate.vehicle_model = vehicle.model
+        candidate.vehicle_plate = vehicle.plate_number
+    return candidate
+
+
+async def estimate_price_for(
+    session: AsyncSession,
+    service_type: str,
+    vehicle_type: str,
+    distance_km: float,
+) -> float | None:
+    """Server-side price estimate for a candidate at ``distance_km``.
+
+    Uses the same live rate card + fuel/labour knobs as a real match (see
+    ``calculate_price``), so the preview and the eventual assignment stay in
+    agreement. Returns None only for a non-finite/absent distance.
+    """
+    if distance_km is None:
+        return None
+    price = await calculate_price(session, service_type, vehicle_type, distance_km)
+    return float(price)
 
 
 # Once a driver has taken the job, the client needs to be able to reach them
@@ -325,5 +362,5 @@ async def match_request(session: AsyncSession, request: ServiceRequest):
     await session.commit()
     await session.refresh(dispatch)
 
-    candidates = [_candidate_schema(r) for r in ranked]
+    candidates = [await _candidate_schema(r) for r in ranked]
     return dispatch, driver_row, driver_user, candidates

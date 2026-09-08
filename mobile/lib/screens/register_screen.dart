@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/text_field_widget.dart';
+import '../theme/app_theme.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -38,14 +39,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.local_shipping, size: 80, color: Color(0xFF1D4ED8)),
+                const Icon(Icons.local_shipping, size: 80, color: AppColors.primary),
                 const SizedBox(height: 16),
                 Text(
                   'Create Account',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFF111827),
+                    color: AppColors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 8),

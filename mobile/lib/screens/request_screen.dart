@@ -2,11 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/request_provider.dart';
+import '../providers/nearby_provider.dart';
+import '../models/driver_candidate.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/text_field_widget.dart';
 import '../services/location_service.dart';
-import '../utils/money.dart';
+import '../theme/app_theme.dart';
 
+/// One-screen request flow anchored on the commuter's position.
+///
+/// Replaces the old 3-tab wizard. The map is the context: the commuter's GPS
+/// is captured up front (or pinned manually) and the price quote updates live
+/// against the chosen service and vehicle. Submitting dispatches straight
+/// into the live-status screen.
 class RequestScreen extends StatefulWidget {
   const RequestScreen({super.key});
 
@@ -14,16 +22,15 @@ class RequestScreen extends StatefulWidget {
   State<RequestScreen> createState() => _RequestScreenState();
 }
 
-class _RequestScreenState extends State<RequestScreen> with SingleTickerProviderStateMixin {
+class _RequestScreenState extends State<RequestScreen> {
   final _formKey = GlobalKey<FormState>();
-  late TabController _tabController;
-  
+
   // Form fields
   final _descriptionController = TextEditingController();
   final _locationController = TextEditingController();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
-  
+
   String _serviceType = 'towing';
   String _vehicleType = 'car';
   bool _gettingLocation = false;
@@ -33,12 +40,13 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    // Capture the position as soon as the screen opens so "Request Service"
+    // is one decision away, not a detour through a location step.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _getCurrentLocation());
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     _descriptionController.dispose();
     _locationController.dispose();
     _nameController.dispose();
@@ -47,26 +55,20 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
   }
 
   Future<void> _getCurrentLocation() async {
+    if (_gettingLocation) return;
     setState(() => _gettingLocation = true);
     try {
-
-      // Real device position. This used to be a hardcoded San Francisco
-      // constant, so every request was filed from the same point and the
-      // distance to any driver was meaningless.
       final position = await locationService.current();
       _latitude = position.latitude;
       _longitude = position.longitude;
       _locationController.text =
           '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Location captured: ${_locationController.text}')),
+          SnackBar(content: Text('Location captured — drivers near you are shown on the map')),
         );
       }
     } on LocationException catch (e) {
-      // Say which problem it is: 'turn on location services' and 'you
-      // denied permission' need different actions from the user.
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -86,103 +88,71 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
     }
   }
 
+  /// The driver the commuter tapped on the map, if any. Advisory: the server
+  /// still matches the nearest available driver at dispatch time.
+  DriverCandidate? _selectedDriver(BuildContext context) {
+    final provider = context.read<NearbyProvider>();
+    return provider.selectedDriver;
+  }
+
+  String? _validateDescription(String? value) {
+    if (value == null || value.isEmpty) return 'Please provide a description';
+    if (value.length < 10) return 'Please provide more details (at least 10 characters)';
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final selectedDriver = _selectedDriver(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Request Service'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(icon: Icon(Icons.location_on), text: 'Location'),
-            Tab(icon: Icon(Icons.build), text: 'Service'),
-            Tab(icon: Icon(Icons.person), text: 'Contact'),
-          ],
-          labelColor: const Color(0xFF1D4ED8),
-          unselectedLabelColor: Colors.grey,
-          indicatorColor: const Color(0xFF1D4ED8),
+          onPressed: () => Navigator.of(context).pop(),
         ),
       ),
       body: Form(
         key: _formKey,
-        child: TabBarView(
-          controller: _tabController,
-          children: [
-            // Tab 1: Location
-            _buildLocationTab(),
-            // Tab 2: Service Details
-            _buildServiceTab(),
-            // Tab 3: Contact Info
-            _buildContactTab(),
-          ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (selectedDriver != null) ...[
+                _buildSelectedDriverCard(selectedDriver),
+                const SizedBox(height: 16),
+              ],
+              _buildLocationSection(context),
+              const SizedBox(height: 20),
+              _buildServiceSection(context),
+              const SizedBox(height: 20),
+              _buildContactSection(context),
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: _buildSubmitButton(),
     );
   }
 
-  Widget _buildLocationTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildSelectedDriverCard(DriverCandidate driver) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(AppRadii.md),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+      ),
+      child: Row(
         children: [
-          const SizedBox(height: 8),
-          
-          // Get Current Location Button
-          SecondaryButton(
-            text: 'Share Current Location',
-            icon: Icons.my_location,
-            isLoading: _gettingLocation,
-            onPressed: _getCurrentLocation,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Or enter address manually',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-          ),
-          const SizedBox(height: 16),
-          
-          // Location Input
-          TextFieldWidget(
-            controller: _locationController,
-            label: 'Address or Landmark *',
-            hint: 'e.g. Third Mainland Bridge, Lagos',
-            prefixIcon: Icons.location_on_outlined,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter a location';
-              }
-              return null;
-            },
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Help text
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.blue.shade200),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Your location helps us dispatch the nearest available tow truck. Coordinates are highlighted for accuracy.',
-                    style: TextStyle(color: Colors.blue.shade700, fontSize: 13),
-                  ),
-                ),
-              ],
+          Icon(Icons.local_shipping, color: AppColors.primary, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Driver ${driver.name ?? driver.email} · ${driver.distanceKm
+                  .toStringAsFixed(1)} km — closest available will be dispatched',
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
             ),
           ),
         ],
@@ -190,155 +160,128 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildServiceTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          
-          // Service Type Dropdown
-          _buildDropdown(
-            label: 'Service Type *',
-            value: _serviceType,
-            items: const [
-              {'value': 'towing', 'label': 'Emergency Towing'},
-              {'value': 'roadside', 'label': 'Roadside Assistance'},
-              {'value': 'recovery', 'label': 'Vehicle Recovery'},
-            ],
-            onChanged: (value) => setState(() => _serviceType = value!),
-            prefixIcon: Icons.build_outlined,
-          ),
-          const SizedBox(height: 16),
-          
-          // Vehicle Type Dropdown
-          _buildDropdown(
-            label: 'Vehicle Type *',
-            value: _vehicleType,
-            items: const [
-              {'value': 'car', 'label': 'Car / Sedan'},
-              {'value': 'suv', 'label': 'SUV / Crossover'},
-              {'value': 'truck', 'label': 'Truck / Van'},
-              {'value': 'motorcycle', 'label': 'Motorcycle'},
-              {'value': 'other', 'label': 'Other'},
-            ],
-            onChanged: (value) => setState(() => _vehicleType = value!),
-            prefixIcon: Icons.directions_car,
-          ),
-          const SizedBox(height: 16),
-          
-          // Description
-          TextFieldWidget(
-            controller: _descriptionController,
-            label: 'Description *',
-            hint: 'Describe the issue, vehicle condition, and any special instructions...',
-            prefixIcon: Icons.description_outlined,
-            maxLines: 5,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please provide a description';
-              }
-              if (value.length < 10) {
-                return 'Please provide more details (at least 10 characters)';
-              }
-              return null;
-            },
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Help text
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.green.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.green.shade200),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.check_circle_outline, color: Colors.green.shade700, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Be specific about the problem (flat tire, engine failure, accident, etc.) and any access issues.',
-                    style: TextStyle(color: Colors.green.shade700, fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+  Widget _buildLocationSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(context, 'Location', Icons.my_location),
+        const SizedBox(height: 8),
+        SecondaryButton(
+          text: _locationController.text.isEmpty
+              ? 'Share Current Location'
+              : 'Re-capture Location',
+          icon: Icons.my_location,
+          isLoading: _gettingLocation,
+          onPressed: _getCurrentLocation,
+        ),
+        const SizedBox(height: 8),
+        TextFieldWidget(
+          controller: _locationController,
+          label: 'Address or Landmark *',
+          hint: 'e.g. Third Mainland Bridge, Lagos',
+          prefixIcon: Icons.location_on_outlined,
+          validator: (value) =>
+              (value == null || value.isEmpty) ? 'Please enter a location' : null,
+        ),
+      ],
     );
   }
 
-  Widget _buildContactTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          
-          // Name
-          TextFieldWidget(
-            controller: _nameController,
-            label: 'Full Name *',
-            hint: 'Chidi Okonkwo',
-            prefixIcon: Icons.person_outline,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter your name';
-              }
-              return null;
-            },
+  Widget _buildServiceSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(context, 'Service', Icons.build_circle),
+        const SizedBox(height: 8),
+        _buildDropdown(
+          label: 'Service Type *',
+          value: _serviceType,
+          items: const [
+            {'value': 'towing', 'label': 'Emergency Towing'},
+            {'value': 'roadside', 'label': 'Roadside Assistance'},
+            {'value': 'recovery', 'label': 'Vehicle Recovery'},
+          ],
+          onChanged: (value) => setState(() => _serviceType = value!),
+          prefixIcon: Icons.build_outlined,
+        ),
+        const SizedBox(height: 16),
+        _buildDropdown(
+          label: 'Vehicle Type *',
+          value: _vehicleType,
+          items: const [
+            {'value': 'car', 'label': 'Car / Sedan'},
+            {'value': 'suv', 'label': 'SUV / Crossover'},
+            {'value': 'truck', 'label': 'Truck / Van'},
+            {'value': 'motorcycle', 'label': 'Motorcycle'},
+            {'value': 'other', 'label': 'Other'},
+          ],
+          onChanged: (value) => setState(() => _vehicleType = value!),
+          prefixIcon: Icons.directions_car,
+        ),
+        const SizedBox(height: 16),
+        TextFieldWidget(
+          controller: _descriptionController,
+          label: 'Description *',
+          hint: 'Describe the issue, vehicle condition, and any special instructions...',
+          prefixIcon: Icons.description_outlined,
+          maxLines: 5,
+          validator: _validateDescription,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContactSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(context, 'Contact (who we call back)', Icons.phone_outlined),
+        const SizedBox(height: 8),
+        TextFieldWidget(
+          controller: _nameController,
+          label: 'Full Name *',
+          hint: 'Chidi Okonkwo',
+          prefixIcon: Icons.person_outline,
+          validator: (value) =>
+              (value == null || value.isEmpty) ? 'Please enter your name' : null,
+        ),
+        const SizedBox(height: 16),
+        TextFieldWidget(
+          controller: _phoneController,
+          label: 'Phone Number *',
+          hint: '08030001122',
+          prefixIcon: Icons.phone_outlined,
+          keyboardType: TextInputType.phone,
+          validator: (value) =>
+              (value == null || value.isEmpty) ? 'Please enter your phone number' : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(BuildContext context, String title, IconData icon) {
+    return Row(
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: AppColors.primarySoft,
+            borderRadius: BorderRadius.circular(8),
           ),
-          const SizedBox(height: 16),
-          
-          // Phone
-          TextFieldWidget(
-            controller: _phoneController,
-            label: 'Phone Number *',
-            hint: '08030001122',
-            prefixIcon: Icons.phone_outlined,
-            keyboardType: TextInputType.phone,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter your phone number';
-              }
-              return null;
-            },
+          child: Center(
+            child: Icon(icon, size: 16, color: AppColors.primary),
           ),
-          
-          const SizedBox(height: 24),
-          
-          // Help text
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.purple.shade50,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.purple.shade200),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.info_outline, color: Colors.purple.shade700, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'We\'ll call you to confirm details and provide an ETA. Your information is kept secure.',
-                    style: TextStyle(color: Colors.purple.shade700, fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: AppColors.textPrimary,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -367,16 +310,16 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
             filled: true,
             fillColor: Colors.white,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(AppRadii.md),
+              borderSide: const BorderSide(color: AppColors.border),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(AppRadii.md),
+              borderSide: const BorderSide(color: AppColors.border),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF1D4ED8), width: 2),
+              borderRadius: BorderRadius.circular(AppRadii.md),
+              borderSide: const BorderSide(color: AppColors.primary, width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           ),
@@ -410,7 +353,7 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
           ),
           child: SafeArea(
             child: PrimaryButton(
-              text: 'Submit Request',
+              text: 'Request Service',
               isLoading: provider.isLoading,
               onPressed: () async {
                 if (_formKey.currentState!.validate()) {
@@ -424,55 +367,31 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
                     latitude: _latitude,
                     longitude: _longitude,
                   );
-                  if (success && context.mounted) {
-                    // createRequest also matches the nearest driver, so show
-                    // who is coming rather than a bare confirmation. A request
-                    // with no driver available is still a valid request.
-                    final match = provider.lastDispatch;
-                    if (match != null) {
-                      await showDialog<void>(
-                        context: context,
-                        builder: (dialogContext) => AlertDialog(
-                          title: const Row(
-                            children: [
-                              Icon(Icons.check_circle, color: Colors.green),
-                              SizedBox(width: 8),
-                              Text('Driver Dispatched'),
-                            ],
-                          ),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _matchRow('Driver', match['driver_email']),
-                              _matchRow('Distance', match['distance_km'] == null
-                                  ? null
-                                  : '${match['distance_km']} km'),
-                              _matchRow('ETA', match['eta_minutes'] == null
-                                  ? null
-                                  : '~${match['eta_minutes']} min'),
-                              _matchRow('Estimated price',
-                                  formatMoney(match['price'], match['currency'] as String?)),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(dialogContext).pop(),
-                              child: const Text('Done'),
-                            ),
-                          ],
+                  if (!success || !context.mounted) return;
+
+                  if (provider.lastDispatch == null && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          provider.error ?? 'Request filed. No driver available yet.',
                         ),
-                      );
-                    } else if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(provider.error ??
-                              'Request filed. No driver available yet.'),
-                          backgroundColor: Colors.orange,
-                        ),
-                      );
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                  }
+
+                  if (context.mounted) {
+                    // Fresh request is at the front of the provider's list.
+                    final id = provider.requests.isEmpty
+                        ? null
+                        : (provider.requests.first as Map).cast<String, dynamic>()['id'] as int?;
+                    ScaffoldMessenger.of(context).clearSnackBars();
+                    if (id != null) {
+                      context.go('/home');
+                      context.push('/request-status/$id');
+                    } else {
+                      context.go('/home');
                     }
-                    if (context.mounted) context.go('/dashboard');
                   }
                 }
               },
@@ -480,28 +399,6 @@ class _RequestScreenState extends State<RequestScreen> with SingleTickerProvider
           ),
         );
       },
-    );
-  }
-
-  /// One label/value line in the dispatch confirmation.
-  static Widget _matchRow(String label, Object? value) {
-    if (value == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(color: Colors.black54)),
-          const SizedBox(width: 12),
-          Flexible(
-            child: Text(
-              value.toString(),
-              textAlign: TextAlign.right,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

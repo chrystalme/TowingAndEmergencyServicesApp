@@ -5,12 +5,15 @@ import 'providers/auth_provider.dart';
 import 'services/push_service.dart';
 import 'providers/request_provider.dart';
 import 'providers/driver_provider.dart';
+import 'providers/nearby_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
-import 'screens/dashboard_screen.dart';
+import 'screens/home_screen.dart';
 import 'screens/request_screen.dart';
 import 'screens/request_list_screen.dart';
+import 'screens/request_status_screen.dart';
 import 'screens/driver_console_screen.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,50 +49,12 @@ class TowingEmergencyApp extends StatelessWidget {
         ChangeNotifierProvider<AuthProvider>.value(value: auth),
         ChangeNotifierProvider(create: (_) => RequestProvider()),
         ChangeNotifierProvider(create: (_) => DriverProvider()),
+        ChangeNotifierProvider(create: (_) => NearbyProvider()),
       ],
       child: MaterialApp.router(
         title: 'Towing & Emergency Services',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF1D4ED8), // primary-700
-            brightness: Brightness.light,
-          ),
-          appBarTheme: const AppBarTheme(
-            centerTitle: true,
-            elevation: 0,
-          ),
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-          inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFF1D4ED8), width: 2),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.red, width: 1),
-            ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          ),
-        ),
+        theme: buildAppTheme(),
         routerConfig: _router,
       ),
     );
@@ -115,8 +80,8 @@ GoRouter _createRouter(AuthProvider auth) => GoRouter(
       builder: (context, state) => const RegisterScreen(),
     ),
     GoRoute(
-      path: '/dashboard',
-      builder: (context, state) => const DashboardScreen(),
+      path: '/home',
+      builder: (context, state) => const HomeScreen(),
     ),
     GoRoute(
       path: '/request',
@@ -125,6 +90,12 @@ GoRouter _createRouter(AuthProvider auth) => GoRouter(
     GoRoute(
       path: '/requests',
       builder: (context, state) => const RequestListScreen(),
+    ),
+    GoRoute(
+      path: '/request-status/:id',
+      builder: (context, state) => RequestStatusScreen(
+        requestId: int.parse(state.pathParameters['id']!),
+      ),
     ),
     GoRoute(
       path: '/driver',
@@ -148,7 +119,7 @@ GoRouter _createRouter(AuthProvider auth) => GoRouter(
 
     // Authenticated: never sit on a landing screen.
     if (isLoggedIn && landingScreens.contains(location)) {
-      return '/dashboard';
+      return '/home';
     }
 
     return null;

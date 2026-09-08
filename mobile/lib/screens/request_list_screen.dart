@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/request_provider.dart';
+import '../theme/app_theme.dart';
 
 class RequestListScreen extends StatefulWidget {
   const RequestListScreen({super.key});
@@ -107,7 +108,7 @@ class _RequestListScreenState extends State<RequestListScreen> {
         onPressed: () => context.push('/request'),
         icon: const Icon(Icons.add),
         label: const Text('New Request'),
-        backgroundColor: const Color(0xFF1D4ED8),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
       ),
     );
@@ -159,10 +160,10 @@ class _RequestListScreenState extends State<RequestListScreen> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1D4ED8).withValues(alpha: 0.1),
+                      color: AppColors.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.local_shipping, color: Color(0xFF1D4ED8), size: 24),
+                    child: Icon(Icons.local_shipping, color: AppColors.primary, size: 24),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -171,9 +172,9 @@ class _RequestListScreenState extends State<RequestListScreen> {
                       children: [
                         Text(
                           request['description'] as String? ?? 'Service Request',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF111827),
+                            color: AppColors.textPrimary,
                             fontSize: 16,
                           ),
                           maxLines: 1,

@@ -241,8 +241,20 @@ class ApiService {
   }
 
   // Nearest available drivers for a coordinate (preview, no assignment).
-  Future<List<dynamic>> getAvailableDrivers(double lat, double lng) async {
-    return (await get('/dispatch/available?lat=$lat&lng=$lng')) as List<dynamic>;
+  //
+  // The service/vehicle filters let the map screen re-quote prices for the
+  // different service types without changing the endpoint. They default to
+  // towing/car so existing callers keep working untouched.
+  Future<List<dynamic>> getAvailableDrivers(
+    double lat,
+    double lng, {
+    String serviceType = 'towing',
+    String vehicleType = 'car',
+  }) async {
+    return (await get(
+      '/dispatch/available?lat=$lat&lng=$lng'
+      '&service_type=$serviceType&vehicle_type=$vehicleType',
+    )) as List<dynamic>;
   }
 
   // Match the nearest driver to a pending request.

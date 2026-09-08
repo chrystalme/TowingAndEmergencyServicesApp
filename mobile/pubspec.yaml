@@ -23,6 +23,8 @@ dependencies:
   # Tap-to-call the assigned driver. Showing a number that has to be
   # retyped is no use to someone stood on the hard shoulder.
   url_launcher: ^6.3.1
+  flutter_map: ^8.3.2
+  latlong2: ^0.9.1
 
 dev_dependencies:
   flutter_test:

@@ -19,8 +19,23 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
 
+  /// Focused when the screen loads so a mobile user is one keystroke away —
+  /// the keyboard comes up automatically instead of requiring a tap into the
+  /// field first.
+  late final FocusNode _emailFocus = FocusNode(debugLabel: 'login-email');
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _emailFocus.requestFocus();
+    });
+  }
+
   @override
   void dispose() {
+    _emailFocus.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -73,6 +88,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         hint: 'you@example.com',
                         keyboardType: TextInputType.emailAddress,
                         prefixIcon: Icons.email_outlined,
+                        focusNode: _emailFocus,
                         validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Please enter your email';

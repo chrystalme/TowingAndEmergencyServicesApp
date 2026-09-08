@@ -13,6 +13,11 @@ class TextFieldWidget extends StatelessWidget {
   final TextInputAction? textInputAction;
   final Function(String)? onFieldSubmitted;
 
+  /// A caller-owned [FocusNode] so the field can be focused programmatically
+  /// (e.g. auto-focus the first field when a screen loads). When null the
+  /// field creates its own internal node, as before.
+  final FocusNode? focusNode;
+
   const TextFieldWidget({
     super.key,
     required this.controller,
@@ -26,6 +31,7 @@ class TextFieldWidget extends StatelessWidget {
     this.maxLines = 1,
     this.textInputAction,
     this.onFieldSubmitted,
+    this.focusNode,
   });
 
   @override
@@ -49,6 +55,7 @@ class TextFieldWidget extends StatelessWidget {
           maxLines: maxLines,
           textInputAction: textInputAction,
           onFieldSubmitted: onFieldSubmitted,
+          focusNode: focusNode,
           decoration: InputDecoration(
             hintText: hint,
             prefixIcon: prefixIcon != null

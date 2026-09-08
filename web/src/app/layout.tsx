@@ -12,6 +12,11 @@ export const metadata: Metadata = {
   description: 'Professional towing and emergency roadside assistance services',
 };
 
+// Clerk is optional. Without a publishable key (fresh clone, non-Clerk
+// deploy) the provider would throw on every page, so it is simply not
+// rendered — the app keeps working with the email/password login only.
+const clerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
 export default function RootLayout({
   children,
 }: {
@@ -20,12 +25,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <ClerkProvider>
-          <Providers>
-            {children}
-            <ClerkTokenSync />
-          </Providers>
-        </ClerkProvider>
+        {clerkEnabled ? (
+          <ClerkProvider>
+            <Providers>
+              {children}
+              <ClerkTokenSync />
+            </Providers>
+          </ClerkProvider>
+        ) : (
+          <Providers>{children}</Providers>
+        )}
       </body>
     </html>
   );

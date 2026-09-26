@@ -80,6 +80,17 @@ class DriverProvider extends ChangeNotifier {
     }
   }
 
+  /// Reload jobs, then the profile, in that order.
+  ///
+  /// Fetching jobs is what lapses an offer the driver sat on (and releases
+  /// them). Loading the profile alongside it raced that, so the console
+  /// could show 'Busy' for a driver the server had already freed, and the
+  /// refresh button (jobs only) never corrected it.
+  Future<void> refresh() async {
+    await loadAssignments();
+    await loadProfile();
+  }
+
   /// Move an accepted job along: enroute -> arrived -> completed.
   ///
   /// Completing releases the driver back into the available pool, so the

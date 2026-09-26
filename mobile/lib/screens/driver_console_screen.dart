@@ -23,9 +23,7 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final provider = context.read<DriverProvider>();
-      provider.loadProfile();
-      provider.loadAssignments();
+      context.read<DriverProvider>().refresh();
     });
   }
 
@@ -355,8 +353,11 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Controls
-                if (active)
+                // Controls. A busy driver keeps publishing their position
+                // (it is what the client's live tracking follows) but is not
+                // offered Go Active: the server keeps them busy until the
+                // job ends, so that button could only ever fail.
+                if (active || busy)
                   Column(
                     children: [
                       SecondaryButton(
@@ -365,13 +366,15 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
                         isLoading: provider.isLoading,
                         onPressed: _refreshPosition,
                       ),
-                      const SizedBox(height: 12),
-                      PrimaryButton(
-                        text: 'Go Offline',
-                        backgroundColor: Colors.red.shade600,
-                        isLoading: provider.isLoading,
-                        onPressed: _goOffline,
-                      ),
+                      if (active) ...[
+                        const SizedBox(height: 12),
+                        PrimaryButton(
+                          text: 'Go Offline',
+                          backgroundColor: Colors.red.shade600,
+                          isLoading: provider.isLoading,
+                          onPressed: _goOffline,
+                        ),
+                      ],
                     ],
                   )
                 else
@@ -407,7 +410,7 @@ class _DriverConsoleScreenState extends State<DriverConsoleScreen> {
                     IconButton(
                       icon: const Icon(Icons.refresh),
                       tooltip: 'Refresh jobs',
-                      onPressed: () => provider.loadAssignments(),
+                      onPressed: () => provider.refresh(),
                     ),
                   ],
                 ),

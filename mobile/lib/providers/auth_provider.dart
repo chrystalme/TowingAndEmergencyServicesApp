@@ -34,12 +34,21 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Read the role from the server. A stale or rejected token leaves the
-  /// user as a commuter, which shows the safe subset of the app.
+  /// Read the role from the server. A failure leaves the user as a
+  /// commuter, which shows the safe subset of the app.
+  ///
+  /// A rejected token is different: it means there is no session. Treating
+  /// it as a commuter kept an expired session on the signed-in screens,
+  /// where every call 401'd and a driver lost the Driver Console, with no
+  /// way back to the login screen short of clearing app data.
   Future<void> _loadRole() async {
     try {
       final me = await apiService.getMe();
       _role = (me['role'] as String?) ?? 'commuter';
+    } on UnauthorizedException {
+      await apiService.logout();
+      _isLoggedIn = false;
+      _role = 'commuter';
     } catch (_) {
       _role = 'commuter';
     }

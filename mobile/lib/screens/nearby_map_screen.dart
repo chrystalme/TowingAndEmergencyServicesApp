@@ -185,7 +185,7 @@ class _NearbyMapScreenState extends State<NearbyMapScreen> {
           children: [
             TileLayer(
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'towing_emergency',
+              userAgentPackageName: 'ng.towassist.app',
             ),
             CircleLayer(
               circles: [

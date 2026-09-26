@@ -14,8 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.auth import current_active_user, may_drive
 from ..core.database import get_async_session
-from ..models import Driver, User
+from ..models import Dispatch, Driver, User
 from ..schemas import DriverRead, DriverUpdate
+from ..services.dispatch import BUSY_DISPATCH_STATES
 from .tracking_ws import publish_driver_position
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
@@ -48,6 +49,24 @@ async def _upsert_driver(session: AsyncSession, user: User, data: DriverUpdate) 
         session.add(driver)
 
     payload = data.model_dump(exclude_unset=True)
+
+    # While a job is live the dispatch lifecycle owns the driver's status and
+    # releases them when it ends. A client saying 'available' here (the phone
+    # heartbeat re-sends its cached status) would put a driver who is still
+    # enroute back in the pool and let dispatch stack a second job on them.
+    # The position in the same update still applies.
+    if payload.get("current_status") == "available":
+        live = (
+            await session.execute(
+                select(Dispatch.id).where(
+                    Dispatch.driver_id == user.id,
+                    Dispatch.status.in_(BUSY_DISPATCH_STATES),
+                )
+            )
+        ).first()
+        if live is not None:
+            payload.pop("current_status")
+
     for field, value in payload.items():
         setattr(driver, field, value)
 

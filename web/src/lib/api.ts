@@ -171,6 +171,18 @@ class ApiClient {
     return response.data;
   }
 
+  // Jobs assigned to the signed-in driver that still need them.
+  async getMyDispatches() {
+    const response = await this.client.get('/dispatch/mine');
+    return response.data;
+  }
+
+  // The assigned driver moves an accepted job along.
+  async advanceDispatch(dispatchId: number, status: 'enroute' | 'arrived' | 'completed') {
+    const response = await this.client.post(`/dispatch/${dispatchId}/status`, { status });
+    return response.data;
+  }
+
   // Vehicle endpoints
   async getVehicles() {
     const response = await this.client.get('/vehicles');

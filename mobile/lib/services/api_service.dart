@@ -2,6 +2,18 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+/// The server rejected the stored token (expired, or signed with another
+/// secret). Distinct from other failures so callers can sign the user out
+/// instead of carrying on with a session that no longer exists.
+class UnauthorizedException implements Exception {
+  UnauthorizedException(this.message);
+  final String message;
+
+  // Same text as a plain Exception, which callers already show to users.
+  @override
+  String toString() => 'Exception: $message';
+}
+
 class ApiService {
   // Configurable at build/run time so one codebase serves every target:
   //   iOS simulator / desktop : the default below (shares the host network)
@@ -69,8 +81,9 @@ class ApiService {
     // If 401, clear token
     if (response.statusCode == 401) {
       clearToken();
+      throw UnauthorizedException(errorMessage);
     }
-    
+
     throw Exception(errorMessage);
   }
 

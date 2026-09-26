@@ -346,6 +346,9 @@ class _RequestStatusScreenState extends State<RequestStatusScreen> {
           children: [
             TileLayer(
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              // OSM's tile policy requires identifying the app; without it
+              // every tile comes back as a 403 "Access blocked" image.
+              userAgentPackageName: 'ng.towassist.app',
             ),
             MarkerLayer(markers: markers),
           ],

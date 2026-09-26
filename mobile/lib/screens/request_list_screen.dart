@@ -13,6 +13,17 @@ class RequestListScreen extends StatefulWidget {
 
 class _RequestListScreenState extends State<RequestListScreen> {
   @override
+  void initState() {
+    super.initState();
+    // The dashboard this tab replaced loaded the list on open; without it a
+    // cold start shows 'No service requests yet', and pull-to-refresh can't
+    // recover because the empty state isn't scrollable.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<RequestProvider>().fetchRequests();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(

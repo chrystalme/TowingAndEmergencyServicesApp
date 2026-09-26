@@ -547,6 +547,35 @@ async def test_driver_walks_job_to_completion_and_is_released(
 
 
 @pytest.mark.asyncio
+async def test_busy_driver_cannot_rejoin_the_pool_mid_job(client: AsyncClient, auth_headers: dict):
+    """A client saying 'available' mid-job must not free the driver for a second match.
+
+    The phone's heartbeat re-sends its cached status, and the web console
+    offered 'Go Online' to a driver on a job; either one used to set
+    'available' on a driver who was still enroute, so dispatch would stack a
+    second job on them. The position in the same update must still land.
+    """
+    _, _, drv = await _accepted_job(client, auth_headers, "busy-driver@example.com", 46.0, -80.0)
+
+    resp = await client.put(
+        "/api/drivers/me",
+        json={"is_online": True, "current_status": "available", "current_lat": 46.001, "current_lng": -80.001},
+        headers=drv,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["current_status"] == "enroute"
+    assert resp.json()["current_lat"] == 46.001
+
+    second = await client.post(
+        "/api/service-requests",
+        json={"description": "Should not reach the busy driver", "location": "Nearby", "latitude": 46.0, "longitude": -80.0},
+        headers=auth_headers,
+    )
+    match = await client.post("/api/dispatch", json={"request_id": second.json()["id"]}, headers=auth_headers)
+    assert match.status_code == 422, match.text
+
+
+@pytest.mark.asyncio
 async def test_completed_driver_can_take_another_job(client: AsyncClient, auth_headers: dict):
     """The whole point of releasing: a driver is matchable again afterwards."""
     _, dispatch_id, drv = await _accepted_job(
